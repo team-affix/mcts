@@ -15,34 +15,34 @@ namespace monte_carlo
         std::map<size_t, tree_node> m_children;
     };
 
+    template<typename RND_DEVICE_T>
     double tree_search(
         tree_node&                           a_node,
         const std::function<size_t(size_t)>& a_act_fxn,
         const std::function<double()>&       a_value_fxn,
-        size_t                               a_remaining_action_count)
+        size_t                               a_remaining_action_count,
+        const double                         a_exploration_constant,
+        RND_DEVICE_T&                        a_rnd_dev)
     {
         // performs a series of finalizing moves until we hit terminal state
-        const auto& l_rollout = [&a_act_fxn, &a_value_fxn, a_remaining_action_count]
+        const auto& l_rollout = [&a_act_fxn, &a_value_fxn, a_remaining_action_count, &a_rnd_dev]
         {
             // helper alias (see below usage of `urd`)
             using urd = std::uniform_int_distribution<size_t>;
-            
-            // define some random simulation quantities
-            static std::default_random_engine         s_dre(25);
 
             // create local register of remaining action count
             size_t l_remaining_action_count = a_remaining_action_count;
 
             // execute simulation until we reach a terminal state
             while (l_remaining_action_count > 0)
-                l_remaining_action_count = a_act_fxn(urd(0, l_remaining_action_count-1)(s_dre));
+                l_remaining_action_count = a_act_fxn(urd(0, l_remaining_action_count-1)(a_rnd_dev));
 
             // get the value of this terminal state, and return it.
             return a_value_fxn();
         };
 
         // utilize monte-carlo tree search with UCB1 heuristic
-        const auto& l_UCB1 = [&a_node] (const tree_node& a_child)
+        const auto& l_UCB1 = [&a_node, a_exploration_constant] (const tree_node& a_child)
         {
             if (a_child.m_visits == 0) return std::numeric_limits<double>::infinity();
             // compute the node's exploitative value
@@ -50,8 +50,7 @@ namespace monte_carlo
             // compute the node's explorative value
             double l_child_explorative_value = sqrt(log(a_node.m_visits) / (double)a_child.m_visits);
             // ucb1 = exploitative + c * explorative
-            constexpr double l_c = 20;
-            return l_child_exploitative_value + l_c * l_child_explorative_value;
+            return l_child_exploitative_value + a_exploration_constant * l_child_explorative_value;
         };
 
         //////////////////////////////////////////////////////////////////
@@ -67,7 +66,7 @@ namespace monte_carlo
         if (a_remaining_action_count == 0)
         {
             // get the value for this terminal state
-            int l_val = a_value_fxn();
+            double l_val = a_value_fxn();
             // add this value to the current aggregate value
             a_node.m_value += l_val;
             // return the increment in value
@@ -101,7 +100,7 @@ namespace monte_carlo
         //////////////////////////////////////////////////////////////////
 
         // execute mcts on the chosen child
-        double l_result = tree_search(a_node.m_children[l_selected_action], a_act_fxn, a_value_fxn, l_child_remaining_actions);
+        double l_result = tree_search(a_node.m_children[l_selected_action], a_act_fxn, a_value_fxn, l_child_remaining_actions, a_exploration_constant, a_rnd_dev);
         // add the result to the current node's value
         a_node.m_value += l_result;
         // return the simulation result so the root of the tree can see how this simulation went
