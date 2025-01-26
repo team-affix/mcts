@@ -114,12 +114,42 @@ void test_coin_collecting_game_1()
     
 }
 
+void test_coin_collecting_game_2()
+{
+    constexpr bool ENABLE_DEBUG_LOGS = true;
+    
+    std::mt19937                           l_mt19937(29);
+    std::uniform_real_distribution<double> l_urd(-10, 10);
+    
+    std::vector<double>    l_track(30);
+    std::generate(l_track.begin(), l_track.end(), [&l_mt19937, &l_urd] {return l_urd(l_mt19937);});
+    
+    std::vector<int>       l_moves{1, 2, 3};
+    monte_carlo::tree_node l_root{};
+
+    constexpr int SIMULATIONS = 100000;
+
+    double l_score;
+
+    for (int i = 0; i < SIMULATIONS; ++i)
+    {
+        l_score = coin_collecting_game(l_root, l_track, l_moves, l_mt19937);
+        // LOG(l_score << std::endl);
+    }
+    
+    // LOG(l_root.m_visits << std::endl);
+
+    assert(IS_CLOSE_TO(l_score, 52.135578));
+    
+}
+
 void unit_test_main()
 {
     constexpr bool ENABLE_DEBUG_LOGS = true;
     
     TEST(test_coin_collecting_game_0);
     TEST(test_coin_collecting_game_1);
+    TEST(test_coin_collecting_game_2);
 }
 
 int main()
