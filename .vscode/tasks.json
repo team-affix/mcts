@@ -1,0 +1,24 @@
+{
+    "tasks": [
+        {
+            "type": "cppbuild",
+            "label": "make program",
+            "command": "make",
+            "args": [
+                
+            ],
+            "options": {
+                "cwd": "${fileDirname}/../"
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "detail": "Makes the project."
+        }
+    ],
+    "version": "2.0.0"
+}
