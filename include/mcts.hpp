@@ -50,7 +50,7 @@ namespace monte_carlo
             // compute the node's explorative value
             double l_child_explorative_value = sqrt(log(a_node.m_visits) / (double)a_child.m_visits);
             // ucb1 = exploitative + c * explorative
-            constexpr double l_c = 1.414;
+            constexpr double l_c = 20;
             return l_child_exploitative_value + l_c * l_child_explorative_value;
         };
 
