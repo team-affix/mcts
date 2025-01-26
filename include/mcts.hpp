@@ -15,17 +15,17 @@ namespace monte_carlo
         std::map<size_t, tree_node> m_children;
     };
 
-    template<typename RND_DEVICE_T>
+    template<typename RND_GEN_T>
     double tree_search(
         tree_node&                           a_node,
         const std::function<size_t(size_t)>& a_act_fxn,
         const std::function<double()>&       a_value_fxn,
         size_t                               a_remaining_action_count,
         const double                         a_exploration_constant,
-        RND_DEVICE_T&                        a_rnd_dev)
+        RND_GEN_T&                           a_rnd_gen)
     {
         // performs a series of finalizing moves until we hit terminal state
-        const auto& l_rollout = [&a_act_fxn, &a_value_fxn, a_remaining_action_count, &a_rnd_dev]
+        const auto& l_rollout = [&a_act_fxn, &a_value_fxn, a_remaining_action_count, &a_rnd_gen]
         {
             // helper alias (see below usage of `urd`)
             using urd = std::uniform_int_distribution<size_t>;
@@ -35,7 +35,7 @@ namespace monte_carlo
 
             // execute simulation until we reach a terminal state
             while (l_remaining_action_count > 0)
-                l_remaining_action_count = a_act_fxn(urd(0, l_remaining_action_count-1)(a_rnd_dev));
+                l_remaining_action_count = a_act_fxn(urd(0, l_remaining_action_count-1)(a_rnd_gen));
 
             // get the value of this terminal state, and return it.
             return a_value_fxn();
@@ -100,7 +100,7 @@ namespace monte_carlo
         //////////////////////////////////////////////////////////////////
 
         // execute mcts on the chosen child
-        double l_result = tree_search(a_node.m_children[l_selected_action], a_act_fxn, a_value_fxn, l_child_remaining_actions, a_exploration_constant, a_rnd_dev);
+        double l_result = tree_search(a_node.m_children[l_selected_action], a_act_fxn, a_value_fxn, l_child_remaining_actions, a_exploration_constant, a_rnd_gen);
         // add the result to the current node's value
         a_node.m_value += l_result;
         // return the simulation result so the root of the tree can see how this simulation went
