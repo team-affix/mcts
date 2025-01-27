@@ -11,38 +11,60 @@
 // helpers
 //////////
 
-double coin_collecting_game(
-    monte_carlo::tree_node&    a_root,
-    const std::vector<double>& a_track,
-    const std::vector<int>&    a_jump_lengths,
-    std::mt19937&              a_rnd_dev)
+struct jump
 {
-    // define state
-    int    l_position    = -1;
-    double l_total_score = 0;
+    int m_amount = 0;
+    bool operator<(const jump& a_other) const {return m_amount < a_other.m_amount;}
+};
 
-    // define actions
-    const std::vector<int>& l_actions = a_jump_lengths;
-
-    auto l_act_fxn = [&a_track, &l_position, &l_total_score, &l_actions](size_t a_chosen_action)
+struct coin_collecting_game
+{
+    coin_collecting_game(
+        const std::vector<double>& a_track,
+        const std::vector<int>&    a_jump_lengths)
+        : m_track(a_track), m_jump_lengths(a_jump_lengths)
+    {
+    }
+    int action_count()
+    {
+        if (m_position >= (int)m_track.size()) return 0; // terminal state
+        return m_jump_lengths.size();
+    }
+    jump action(int a_action_index)
+    {
+        return jump{m_jump_lengths[a_action_index]};
+    }
+    void act(jump a_jump)
     {
         // jump to new position
-        l_position += l_actions[a_chosen_action];
-        // terminal state check
-        if (l_position >= a_track.size())
-            // we have reached the track's end
-            return (size_t)0;
+        m_position += a_jump.m_amount;
+        // check for end of track
+        if (m_position >= m_track.size()) return;
         // collect coin at this position of the track
-        l_total_score += a_track[l_position];
-        // return the number of available actions.
-        return l_actions.size();
-    };
-
-    auto l_value_fxn = [&l_total_score]
+        m_total_score += m_track[m_position];
+    }
+    double value()
     {
-        return l_total_score;
-    };
+        return m_total_score;
+    }
+private:
+    // game customization
+    const std::vector<double>& m_track;
+    const std::vector<int>&    m_jump_lengths;
+    // game state
+    int    m_position    = -1;
+    double m_total_score = 0;
+};
 
+double simulate_coin_collecting_game(
+    monte_carlo::tree_node<jump>& a_root,
+    const std::vector<double>&    a_track,
+    const std::vector<int>&       a_jump_lengths,
+    std::mt19937&                 a_rnd_dev)
+{
+    // construct the game context
+    coin_collecting_game l_ctx{a_track, a_jump_lengths};
+    
     // construct a reasonable exploration constant
     double l_exploration_constant = 0;
     for (double l_coin : a_track)
@@ -50,7 +72,7 @@ double coin_collecting_game(
 
     // l_exploration_constant *= 2;
 
-    return monte_carlo::tree_search(a_root, l_act_fxn, l_value_fxn, l_actions.size(), l_exploration_constant, a_rnd_dev);
+    return monte_carlo::tree_search(a_root, l_ctx, l_exploration_constant, a_rnd_dev);
     
 }
 
@@ -66,8 +88,8 @@ void test_coin_collecting_game_0()
     std::vector<double>    l_track(10);
     std::generate(l_track.begin(), l_track.end(), [&l_mt19937, &l_urd] {return l_urd(l_mt19937);});
     
-    std::vector<int>       l_moves{1, 2, 3};
-    monte_carlo::tree_node l_root{};
+    std::vector<int>             l_moves{1, 2, 3};
+    monte_carlo::tree_node<jump> l_root{};
 
     constexpr int SIMULATIONS = 10000;
 
@@ -75,8 +97,8 @@ void test_coin_collecting_game_0()
 
     for (int i = 0; i < SIMULATIONS; ++i)
     {
-        l_score = coin_collecting_game(l_root, l_track, l_moves, l_mt19937);
-        // LOG(l_score << std::endl);
+        l_score = simulate_coin_collecting_game(l_root, l_track, l_moves, l_mt19937);
+        LOG(l_score << std::endl);
     }
     
     // LOG(l_root.m_visits << std::endl);
@@ -95,8 +117,8 @@ void test_coin_collecting_game_1()
     std::vector<double>    l_track(10);
     std::generate(l_track.begin(), l_track.end(), [&l_mt19937, &l_urd] {return l_urd(l_mt19937);});
     
-    std::vector<int>       l_moves{1, 2, 3};
-    monte_carlo::tree_node l_root{};
+    std::vector<int>             l_moves{1, 2, 3};
+    monte_carlo::tree_node<jump> l_root{};
 
     constexpr int SIMULATIONS = 100000;
 
@@ -104,7 +126,7 @@ void test_coin_collecting_game_1()
 
     for (int i = 0; i < SIMULATIONS; ++i)
     {
-        l_score = coin_collecting_game(l_root, l_track, l_moves, l_mt19937);
+        l_score = simulate_coin_collecting_game(l_root, l_track, l_moves, l_mt19937);
         // LOG(l_score << std::endl);
     }
     
@@ -124,8 +146,8 @@ void test_coin_collecting_game_2()
     std::vector<double>    l_track(30);
     std::generate(l_track.begin(), l_track.end(), [&l_mt19937, &l_urd] {return l_urd(l_mt19937);});
     
-    std::vector<int>       l_moves{1, 2, 3};
-    monte_carlo::tree_node l_root{};
+    std::vector<int>             l_moves{1, 2, 3};
+    monte_carlo::tree_node<jump> l_root{};
 
     constexpr int SIMULATIONS = 100000;
 
@@ -133,7 +155,7 @@ void test_coin_collecting_game_2()
 
     for (int i = 0; i < SIMULATIONS; ++i)
     {
-        l_score = coin_collecting_game(l_root, l_track, l_moves, l_mt19937);
+        l_score = simulate_coin_collecting_game(l_root, l_track, l_moves, l_mt19937);
         // LOG(l_score << std::endl);
     }
     
@@ -153,8 +175,8 @@ void test_coin_collecting_game_3()
     std::vector<double>    l_track(30);
     std::generate(l_track.begin(), l_track.end(), [&l_mt19937, &l_urd] {return l_urd(l_mt19937);});
     
-    std::vector<int>       l_moves{2, 3, 5, 7}; // prime moves only :)
-    monte_carlo::tree_node l_root{};
+    std::vector<int>             l_moves{2, 3, 5, 7}; // prime moves only :)
+    monte_carlo::tree_node<jump> l_root{};
 
     constexpr int SIMULATIONS = 100000;
 
@@ -162,7 +184,7 @@ void test_coin_collecting_game_3()
 
     for (int i = 0; i < SIMULATIONS; ++i)
     {
-        l_score = coin_collecting_game(l_root, l_track, l_moves, l_mt19937);
+        l_score = simulate_coin_collecting_game(l_root, l_track, l_moves, l_mt19937);
         // LOG(l_score << std::endl);
     }
     
