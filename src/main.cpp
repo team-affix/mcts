@@ -17,54 +17,37 @@ struct jump
     bool operator<(const jump& a_other) const {return m_amount < a_other.m_amount;}
 };
 
-struct coin_collecting_game
-{
-    coin_collecting_game(
-        const std::vector<double>& a_track,
-        const std::vector<int>&    a_jump_lengths)
-        : m_track(a_track), m_jump_lengths(a_jump_lengths)
-    {
-    }
-    int action_count()
-    {
-        if (m_position >= (int)m_track.size()) return 0; // terminal state
-        return m_jump_lengths.size();
-    }
-    jump action(int a_action_index)
-    {
-        return jump{m_jump_lengths[a_action_index]};
-    }
-    void act(jump a_jump)
-    {
-        // jump to new position
-        m_position += a_jump.m_amount;
-        // check for end of track
-        if (m_position >= m_track.size()) return;
-        // collect coin at this position of the track
-        m_total_score += m_track[m_position];
-    }
-    double value()
-    {
-        return m_total_score;
-    }
-private:
-    // game customization
-    const std::vector<double>& m_track;
-    const std::vector<int>&    m_jump_lengths;
-    // game state
-    int    m_position    = -1;
-    double m_total_score = 0;
-};
-
 double simulate_coin_collecting_game(
     monte_carlo::tree_node<jump>& a_root,
     const std::vector<double>&    a_track,
     const std::vector<int>&       a_jump_lengths,
     std::mt19937&                 a_rnd_dev)
 {
-    // construct the game context
-    coin_collecting_game l_ctx{a_track, a_jump_lengths};
-    
+    // define state
+    int    l_position    = -1;
+    double l_total_score = 0;
+
+    // define actions
+    std::vector<jump> l_actions;
+    std::transform(a_jump_lengths.begin(), a_jump_lengths.end(), std::back_inserter(l_actions),
+        [](int a_jl){return jump{a_jl};});
+
+    auto l_act_fxn = [&a_track, &l_position, &l_total_score, &l_actions](jump a_chosen_action)
+    {
+        // jump to new position
+        l_position += a_chosen_action.m_amount;
+        // terminal state check
+        if (l_position >= a_track.size())
+            { l_actions.clear(); return; }
+        // collect coin at this position of the track
+        l_total_score += a_track[l_position];
+    };
+
+    auto l_value_fxn = [&l_total_score]
+    {
+        return l_total_score;
+    };
+
     // construct a reasonable exploration constant
     double l_exploration_constant = 0;
     for (double l_coin : a_track)
@@ -72,7 +55,7 @@ double simulate_coin_collecting_game(
 
     // l_exploration_constant *= 2;
 
-    return monte_carlo::tree_search(a_root, l_ctx, l_exploration_constant, a_rnd_dev);
+    return monte_carlo::tree_search<jump>(a_root, l_actions, l_act_fxn, l_value_fxn, l_exploration_constant, a_rnd_dev);
     
 }
 
