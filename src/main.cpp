@@ -43,11 +43,6 @@ double simulate_coin_collecting_game(
         l_total_score += a_track[l_position];
     };
 
-    auto l_value_fxn = [&l_total_score]
-    {
-        return l_total_score;
-    };
-
     // construct a reasonable exploration constant
     double l_exploration_constant = 0;
     for (double l_coin : a_track)
@@ -55,7 +50,9 @@ double simulate_coin_collecting_game(
 
     // l_exploration_constant *= 2;
 
-    return monte_carlo::tree_search<jump>(a_root, l_actions, l_act_fxn, l_value_fxn, l_exploration_constant, a_rnd_dev);
+    monte_carlo::tree_search<jump>(a_root, l_actions, l_total_score, l_act_fxn, l_exploration_constant, a_rnd_dev);
+
+    return l_total_score;
     
 }
 
