@@ -50,7 +50,13 @@ double simulate_coin_collecting_game(
 
     // l_exploration_constant *= 2;
 
-    monte_carlo::tree_search<jump>(a_root, l_actions, l_total_score, l_act_fxn, l_exploration_constant, a_rnd_dev);
+    monte_carlo::tree_search<jump>(
+        a_root,
+        l_actions,
+        l_total_score,
+        l_act_fxn,
+        l_exploration_constant,
+        a_rnd_dev);
 
     return l_total_score;
     
