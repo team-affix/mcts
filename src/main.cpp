@@ -23,6 +23,14 @@ double simulate_coin_collecting_game(
     const std::vector<int>&       a_jump_lengths,
     std::mt19937&                 a_rnd_dev)
 {
+    // construct a reasonable exploration constant
+    double l_exploration_constant = 0;
+    for (double l_coin : a_track)
+        if (l_coin > 0) l_exploration_constant += l_coin;
+
+    // construct the simulation context object
+    monte_carlo::simulation<jump, std::mt19937> l_sim(a_root, l_exploration_constant, a_rnd_dev);
+    
     // define state
     int    l_position    = -1;
     double l_total_score = 0;
@@ -32,31 +40,21 @@ double simulate_coin_collecting_game(
     std::transform(a_jump_lengths.begin(), a_jump_lengths.end(), std::back_inserter(l_actions),
         [](int a_jl){return jump{a_jl};});
 
-    auto l_act_fxn = [&a_track, &l_position, &l_total_score, &l_actions](jump a_chosen_action)
+    // loop until end of game condition.
+    while (true)
     {
+        // get next action
+        jump l_chosen_action = l_sim.choose(l_actions);
         // jump to new position
-        l_position += a_chosen_action.m_amount;
+        l_position += l_chosen_action.m_amount;
         // terminal state check
-        if (l_position >= a_track.size())
-            { l_actions.clear(); return; }
+        if (l_position >= a_track.size()) break;
         // collect coin at this position of the track
         l_total_score += a_track[l_position];
-    };
+    }
 
-    // construct a reasonable exploration constant
-    double l_exploration_constant = 0;
-    for (double l_coin : a_track)
-        if (l_coin > 0) l_exploration_constant += l_coin;
-
-    // l_exploration_constant *= 2;
-
-    monte_carlo::tree_search<jump>(
-        a_root,
-        l_actions,
-        l_total_score,
-        l_act_fxn,
-        l_exploration_constant,
-        a_rnd_dev);
+    // terminate simulation with the final score
+    l_sim.terminate(l_total_score);
 
     return l_total_score;
     
