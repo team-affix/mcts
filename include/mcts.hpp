@@ -12,6 +12,9 @@ namespace monte_carlo
     template<typename CHOICE_T>
     struct tree_node
     {
+        tree_node() :
+            m_value(0), m_visits(0), m_children{}
+        {}
         double m_value;
         size_t m_visits;
         std::map<CHOICE_T, tree_node> m_children;
