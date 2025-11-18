@@ -1,0 +1,8 @@
+[
+  {
+    "directory": "/home/user/projects/mcts",
+    "command": "g++ -g -std=c++20 -I./include/ -c src/main.cpp -o build/main.o",
+    "file": "src/main.cpp"
+  }
+]
+
