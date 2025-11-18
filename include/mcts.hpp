@@ -93,6 +93,14 @@ namespace monte_carlo
             }
         }
 
+        size_t length() const
+        {
+            //////////////////////////////////////////////////////////////////
+            ///////////////////// RETURN SIMULATION LENGTH ///////////////////
+            //////////////////////////////////////////////////////////////////
+            return m_simulation_path.size();
+        }
+
     private:
         // UCB1 heuristic (requires m_current_node to be non-null)
         double ucb1(const tree_node<CHOICE_T>& a_child) const
