@@ -3,7 +3,6 @@
 
 #include <math.h>
 #include <map>
-#include <functional>
 #include <random>
 #include <list>
 
@@ -26,6 +25,7 @@ namespace monte_carlo
         simulation(tree_node<CHOICE_T>& a_root, double a_exploration_constant, RND_GEN_T& a_rnd_gen)
             :
             m_current_node(&a_root),
+            m_simulation_length(0),
             m_exploration_constant(a_exploration_constant),
             m_rnd_gen(a_rnd_gen),
             m_simulation_path({&a_root})
@@ -33,6 +33,12 @@ namespace monte_carlo
 
         CHOICE_T choose(const std::vector<CHOICE_T>& a_choices)
         {
+            //////////////////////////////////////////////////////////////////
+            //////////////////////// UPDATE SIM STATS ////////////////////////
+            //////////////////////////////////////////////////////////////////
+            // increment simulation length early
+            ++m_simulation_length;
+
             //////////////////////////////////////////////////////////////////
             ///////////////////////// CHECK LEAF NODE ////////////////////////
             //////////////////////////////////////////////////////////////////
@@ -98,7 +104,10 @@ namespace monte_carlo
             //////////////////////////////////////////////////////////////////
             ///////////////////// RETURN SIMULATION LENGTH ///////////////////
             //////////////////////////////////////////////////////////////////
-            return m_simulation_path.size();
+
+            // NOTE: this is the length of the entire simulation up until this point,
+            // it even includes rollouts that have not yet been added to the simulation path.
+            return m_simulation_length;
         }
 
     private:
@@ -118,6 +127,7 @@ namespace monte_carlo
         // mutable simulation fields
         tree_node<CHOICE_T>*            m_current_node;
         std::list<tree_node<CHOICE_T>*> m_simulation_path;
+        size_t m_simulation_length;
         // algorithm search controls
         double               m_exploration_constant;
         RND_GEN_T&           m_rnd_gen;

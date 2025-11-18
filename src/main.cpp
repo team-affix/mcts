@@ -1,4 +1,8 @@
 #include <iostream>
+#include <vector>
+#include <algorithm>
+#include <random>
+#include <cmath>
 #include "test_utils.hpp"
 
 #include "mcts.hpp"
