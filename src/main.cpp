@@ -38,6 +38,7 @@ double simulate_coin_collecting_game(
     // define state
     int    l_position    = -1;
     double l_total_score = 0;
+    size_t l_action_count = 0;
 
     // define actions
     std::vector<jump> l_actions;
@@ -49,6 +50,7 @@ double simulate_coin_collecting_game(
     {
         // get next action
         jump l_chosen_action = l_sim.choose(l_actions);
+        ++l_action_count;
         // jump to new position
         l_position += l_chosen_action.m_amount;
         // terminal state check
@@ -59,6 +61,9 @@ double simulate_coin_collecting_game(
 
     // terminate simulation with the final score
     l_sim.terminate(l_total_score);
+
+    // verify that simulation's length matches our internal action count
+    assert(l_sim.length() == l_action_count);
 
     return l_total_score;
     
