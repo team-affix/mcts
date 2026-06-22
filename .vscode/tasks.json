@@ -1,14 +1,12 @@
 {
+    "version": "2.0.0",
     "tasks": [
         {
-            "type": "cppbuild",
-            "label": "make program",
+            "label": "build tests",
+            "type": "shell",
             "command": "make",
-            "args": [
-                
-            ],
             "options": {
-                "cwd": "${fileDirname}/../"
+                "cwd": "${workspaceFolder}"
             },
             "problemMatcher": [
                 "$gcc"
@@ -16,9 +14,18 @@
             "group": {
                 "kind": "build",
                 "isDefault": true
+            }
+        },
+        {
+            "label": "run tests",
+            "type": "shell",
+            "command": "make test",
+            "options": {
+                "cwd": "${workspaceFolder}"
             },
-            "detail": "Makes the project."
+            "problemMatcher": [],
+            "group": "test",
+            "dependsOn": "build tests"
         }
-    ],
-    "version": "2.0.0"
+    ]
 }

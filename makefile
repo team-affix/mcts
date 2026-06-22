@@ -1,7 +1,20 @@
-all:
+GTEST_DIR := googletest
+GTEST_INCLUDES := -I$(GTEST_DIR)/googletest/include -I$(GTEST_DIR)/googletest
+GTEST_SRCS := $(GTEST_DIR)/googletest/src/gtest-all.cc $(GTEST_DIR)/googletest/src/gtest_main.cc
+
+CXXFLAGS := -g -std=c++20 -I./include $(GTEST_INCLUDES)
+LDFLAGS := -pthread
+
+TEST_BIN := ./build/mcts_test
+
+all: $(TEST_BIN)
+
+$(TEST_BIN):
 	mkdir -p build
-	g++ -g -std=c++20 -I"./include/" $(wildcard ./src/*) -o ./build/main
-	
+	g++ $(CXXFLAGS) $(GTEST_SRCS) ./src/mcts_test.cpp -o $(TEST_BIN) $(LDFLAGS)
+
+test: all
+	$(TEST_BIN)
+
 clean:
 	rm -rf build
-	

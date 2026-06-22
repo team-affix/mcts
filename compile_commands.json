@@ -1,8 +1,7 @@
 [
-  {
-    "directory": "/home/user/projects/mcts",
-    "command": "g++ -g -std=c++20 -I./include/ -c src/main.cpp -o build/main.o",
-    "file": "src/main.cpp"
-  }
+    {
+        "directory": "/home/user/projects/mcts",
+        "command": "g++ -g -std=c++20 -I./include -Igoogletest/googletest/include -Igoogletest/googletest -c src/mcts_test.cpp -o build/mcts_test.o",
+        "file": "src/mcts_test.cpp"
+    }
 ]
-

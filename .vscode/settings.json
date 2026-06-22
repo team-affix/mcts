@@ -1,4 +1,13 @@
 {
+    "C_Cpp.intelliSenseEngine": "disabled",
+    "C_Cpp.autocomplete": "disabled",
+    "C_Cpp.errorSquiggles": "disabled",
+    "C_Cpp.formatting": "disabled",
+    "clangd.path": "clangd",
+    "clangd.arguments": [
+        "--background-index",
+        "--compile-commands-dir=${workspaceFolder}"
+    ],
     "files.associations": {
         "vector": "cpp",
         "iostream": "cpp",
@@ -91,7 +100,5 @@
         "__nullptr": "cpp",
         "__string": "cpp",
         "cfenv": "cpp"
-    },
-    "cmake.sourceDirectory": "/home/user/projects/scalar-analysis/fftw-3.3.10",
-    "C_Cpp.default.compilerPath": "/usr/bin/g++"
+    }
 }

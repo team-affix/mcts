@@ -2,4 +2,5 @@ CompileFlags:
   Add:
     - "-std=c++20"
     - "-I./include"
-
+    - "-I./googletest/googletest/include"
+    - "-I./googletest/googletest"
