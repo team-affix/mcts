@@ -2,7 +2,7 @@ GTEST_DIR := googletest
 GTEST_INCLUDES := -I$(GTEST_DIR)/googletest/include -I$(GTEST_DIR)/googletest
 GTEST_SRCS := $(GTEST_DIR)/googletest/src/gtest-all.cc $(GTEST_DIR)/googletest/src/gtest_main.cc
 
-CXXFLAGS := -g -std=c++20 -I./include $(GTEST_INCLUDES)
+CXXFLAGS := -g -O2 -std=c++20 -I./include $(GTEST_INCLUDES)
 LDFLAGS := -pthread
 
 TEST_BIN := ./build/mcts_test

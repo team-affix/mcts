@@ -62,7 +62,7 @@ struct sim
         const INodeHandle& root,
         IFloat             exploration_constant);
 
-    IChoice choose(IGetChoiceCount& get_choice_count, IGetChoiceAt& get_choice_at);
+    IChoice choose(const IGetChoiceCount& get_choice_count, const IGetChoiceAt& get_choice_at);
     void    terminate(IFloat value);
     size_t  length() const;
 
@@ -129,8 +129,8 @@ sim<INodeHandle, IChoice, IFloat,
     IWalker,
     IGetChoiceCount, IGetChoiceAt,
     IRolloutChoose>::choose(
-        IGetChoiceCount& get_choice_count,
-        IGetChoiceAt&    get_choice_at)
+        const IGetChoiceCount& get_choice_count,
+        const IGetChoiceAt&    get_choice_at)
 {
     ++sim_length_;
 

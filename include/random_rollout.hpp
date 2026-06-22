@@ -27,7 +27,7 @@ struct random_rollout
 {
     random_rollout(IRndGen& rnd_gen);
 
-    IChoice rollout_choose(IGetChoiceCount& get_choice_count, IGetChoiceAt& get_choice_at);
+    IChoice rollout_choose(const IGetChoiceCount& get_choice_count, const IGetChoiceAt& get_choice_at);
 
 private:
     IRndGen& rnd_gen_;
@@ -44,8 +44,8 @@ random_rollout<IChoice, IRndGen, IGetChoiceCount, IGetChoiceAt>::random_rollout(
 
 template<typename IChoice, typename IRndGen, typename IGetChoiceCount, typename IGetChoiceAt>
 IChoice random_rollout<IChoice, IRndGen, IGetChoiceCount, IGetChoiceAt>::rollout_choose(
-    IGetChoiceCount& get_choice_count,
-    IGetChoiceAt&    get_choice_at)
+    const IGetChoiceCount& get_choice_count,
+    const IGetChoiceAt&    get_choice_at)
 {
     std::uniform_int_distribution<size_t> dist(0, get_choice_count.size() - 1);
     return get_choice_at.at(dist(rnd_gen_));

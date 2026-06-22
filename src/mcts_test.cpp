@@ -142,14 +142,12 @@ protected:
         > s(bank, bank, bank, bank, walker, rollout,
             std::vector<int>{-1}, exploration_constant);
 
-        auto& jumps_ref = const_cast<std::vector<jump_t>&>(jumps);
-
         int    position    = -1;
         double total_score = 0.0;
 
         while (true)
         {
-            jump_t chosen = s.choose(jumps_ref, jumps_ref);
+            jump_t chosen = s.choose(jumps, jumps);
             position += chosen;
             if (position >= static_cast<int>(track.size()))
                 break;
@@ -279,14 +277,12 @@ protected:
             rollout_t
         > s(bank, bank, bank, bank, walker, rollout, -1, exploration_constant);
 
-        auto& jumps_ref = const_cast<std::vector<jump_t>&>(jumps);
-
         int    position = -1;
         double reward   = 0.0;
 
         while (true)
         {
-            jump_t chosen = s.choose(jumps_ref, jumps_ref);
+            jump_t chosen = s.choose(jumps, jumps);
             int    next   = position + chosen;
             if (next >= static_cast<int>(track.size()))
             {
