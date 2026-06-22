@@ -2,30 +2,21 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "build tests",
+            "label": "make",
             "type": "shell",
             "command": "make",
-            "options": {
-                "cwd": "${workspaceFolder}"
-            },
-            "problemMatcher": [
-                "$gcc"
-            ],
             "group": {
                 "kind": "build",
                 "isDefault": true
-            }
-        },
-        {
-            "label": "run tests",
-            "type": "shell",
-            "command": "make test",
+            },
             "options": {
                 "cwd": "${workspaceFolder}"
             },
-            "problemMatcher": [],
-            "group": "test",
-            "dependsOn": "build tests"
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": "$gcc"
         }
     ]
 }

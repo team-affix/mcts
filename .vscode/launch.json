@@ -1,14 +1,49 @@
 {
-    "version": "2.0.0",
+    "version": "0.2.0",
     "configurations": [
         {
-            "name": "Build and run tests",
+            "name": "Build & Debug",
             "type": "gdb",
             "request": "launch",
             "target": "${workspaceFolder}/build/mcts_test",
             "cwd": "${workspaceFolder}",
-            "preLaunchTask": "build tests",
-            "valuesFormatting": "parseText"
+            "preLaunchTask": "make",
+            "valuesFormatting": "prettyPrinters",
+            "autorun": [
+                "-enable-pretty-printing"
+            ]
+        },
+        {
+            "name": "Build & Debug (VS Code C++)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/mcts_test",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "make",
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "setupCommands": [
+                {
+                    "text": "-enable-pretty-printing",
+                    "description": "Enable libstdc++ pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
+            "name": "Build & Debug (CodeLLDB)",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/mcts_test",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopOnEntry": false,
+            "sourceLanguages": ["cpp"],
+            "preLaunchTask": "make",
+            "preRunCommands": [
+                "breakpoint name configure --disable cpp_exception"
+            ]
         }
     ]
 }
