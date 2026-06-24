@@ -132,14 +132,16 @@ protected:
     {
         rollout_t   rollout(rng);
         path_walker walker;
+        monte_carlo::uniform_value_delta<double> delta;
 
         monte_carlo::sim<
             std::vector<int>, jump_t, double,
             bank_t, bank_t, bank_t, bank_t,
             path_walker,
             std::vector<jump_t>, std::vector<jump_t>,
-            rollout_t
-        > s(bank, bank, bank, bank, walker, rollout,
+            rollout_t,
+            monte_carlo::uniform_value_delta<double>
+        > s(bank, bank, bank, bank, walker, rollout, delta,
             std::vector<int>{-1}, exploration_constant);
 
         int    position    = -1;
@@ -154,7 +156,8 @@ protected:
             total_score += track[position];
         }
 
-        s.terminate(total_score);
+        delta.set_value(total_score);
+        s.terminate();
         return total_score;
     }
 
@@ -268,14 +271,16 @@ protected:
     {
         rollout_t       rollout(rng);
         position_walker walker;
+        monte_carlo::uniform_value_delta<double> delta;
 
         monte_carlo::sim<
             int, jump_t, double,
             bank_t, bank_t, bank_t, bank_t,
             position_walker,
             std::vector<jump_t>, std::vector<jump_t>,
-            rollout_t
-        > s(bank, bank, bank, bank, walker, rollout, -1, exploration_constant);
+            rollout_t,
+            monte_carlo::uniform_value_delta<double>
+        > s(bank, bank, bank, bank, walker, rollout, delta, -1, exploration_constant);
 
         int    position = -1;
         double reward   = 0.0;
@@ -286,7 +291,8 @@ protected:
             int    next   = position + chosen;
             if (next >= static_cast<int>(track.size()))
             {
-                s.terminate(reward);
+                delta.set_value(reward);
+                s.terminate();
                 break;
             }
             position = next;
