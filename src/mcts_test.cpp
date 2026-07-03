@@ -385,3 +385,324 @@ TEST_F(TerminalRewardGameTest, Seed49Track20Moves123)
 {
     verify_converges_to_optimal(49, 20, {1, 2, 3}, 50000);
 }
+
+// ---------------------------------------------------------------------------
+// DbuctCoinCollectingGameTest
+//
+// Uses path_walker so every distinct traversal route is a unique node.
+// The reward passed to terminate() is the full root-to-terminal coin sum,
+// so that UCB statistics at every depth remain globally comparable.
+// ---------------------------------------------------------------------------
+class DbuctCoinCollectingGameTest : public ::testing::Test
+{
+protected:
+    using bank_t    = monte_carlo::map_table<std::vector<int>, double, path_unordered_map>;
+    using rollout_t = monte_carlo::random_rollout<
+                         jump_t, std::mt19937,
+                         std::vector<jump_t>, std::vector<jump_t>>;
+    using dbuct_t   = monte_carlo::dbuct<
+                         std::vector<int>, jump_t, double,
+                         bank_t, bank_t, bank_t, bank_t,
+                         path_walker,
+                         std::vector<jump_t>, std::vector<jump_t>,
+                         rollout_t>;
+
+    static constexpr double kTolerance = 0.001;
+
+    void train(bank_t&                    bank,
+               const std::vector<double>& track,
+               const std::vector<jump_t>& jumps,
+               std::mt19937&              rng,
+               double                     exploration_constant,
+               size_t                     grant_increment_interval,
+               int                        training_sims)
+    {
+        rollout_t        rollout(rng);
+        path_walker      walker;
+        std::vector<int> root = {-1};
+
+        dbuct_t d(bank, bank, bank, bank, walker, rollout, root,
+                  grant_increment_interval, exploration_constant);
+
+        std::vector<int> resume = root;
+
+        for (int i = 0; i < training_sims; ++i)
+        {
+            // Accumulate coins already on the path to the resume node.
+            double base_score = 0.0;
+            for (int pos : resume)
+                if (pos >= 0 && pos < static_cast<int>(track.size()))
+                    base_score += track[pos];
+
+            int    position = resume.back();
+            double ep_score = base_score;
+
+            while (true)
+            {
+                jump_t chosen = d.choose(jumps, jumps);
+                position += chosen;
+                if (position >= static_cast<int>(track.size()))
+                    break;
+                ep_score += track[position];
+            }
+
+            resume = d.terminate(ep_score);
+        }
+    }
+
+    double greedy_run(bank_t&                    bank,
+                      const std::vector<double>& track,
+                      const std::vector<jump_t>& jumps,
+                      std::mt19937&              rng)
+    {
+        rollout_t        rollout(rng);
+        path_walker      walker;
+        std::vector<int> root = {-1};
+
+        dbuct_t d(bank, bank, bank, bank, walker, rollout, root,
+                  std::numeric_limits<size_t>::max(), 0.0);
+
+        std::vector<int> resume = root;
+        int              position = resume.back();
+        double           ep_score = 0.0;
+
+        while (true)
+        {
+            jump_t chosen = d.choose(jumps, jumps);
+            position += chosen;
+            if (position >= static_cast<int>(track.size()))
+                break;
+            ep_score += track[position];
+        }
+
+        d.terminate(ep_score);
+        return ep_score;
+    }
+
+    void verify_converges_to_optimal(int                        seed,
+                                     size_t                     track_length,
+                                     const std::vector<jump_t>& move_amounts,
+                                     int                        training_sims,
+                                     size_t                     gii =
+                                         std::numeric_limits<size_t>::max())
+    {
+        std::mt19937                           rng(seed);
+        std::uniform_real_distribution<double> urd(-10, 10);
+
+        std::vector<double> track(track_length);
+        std::generate(track.begin(), track.end(), [&] { return urd(rng); });
+
+        std::cerr << "track:";
+        for (double v : track)
+            std::cerr << " " << std::fixed << std::setprecision(3) << v;
+        std::cerr << "\n";
+
+        double exploration_constant = 0.0;
+        for (double c : track)
+            if (c > 0) exploration_constant += c;
+
+        bank_t bank;
+        train(bank, track, move_amounts, rng, exploration_constant, gii, training_sims);
+
+        const double exploitative_score =
+            greedy_run(bank, track, move_amounts, rng);
+        const double optimal = optimal_cumulative_score(track, move_amounts);
+
+        EXPECT_NEAR(exploitative_score, optimal, kTolerance);
+    }
+};
+
+// gii = SIZE_MAX  =>  vanilla UCT; same parameters as CoinCollectingGameTest.
+TEST_F(DbuctCoinCollectingGameTest, VanillaGIISeed27Track10Moves123)
+{
+    verify_converges_to_optimal(27, 10, {1, 2, 3}, 10000);
+}
+
+TEST_F(DbuctCoinCollectingGameTest, VanillaGIISeed31Track10Moves25)
+{
+    verify_converges_to_optimal(31, 10, {2, 5}, 10000);
+}
+
+TEST_F(DbuctCoinCollectingGameTest, VanillaGIISeed34Track15Moves235)
+{
+    verify_converges_to_optimal(34, 15, {2, 3, 5}, 10000);
+}
+
+TEST_F(DbuctCoinCollectingGameTest, VanillaGIISeed36Track20Moves123)
+{
+    verify_converges_to_optimal(36, 20, {1, 2, 3}, 50000);
+}
+
+// Finite gii — algorithm still converges, budget efficiency differs.
+TEST_F(DbuctCoinCollectingGameTest, GII10Seed27Track10Moves123)
+{
+    verify_converges_to_optimal(27, 10, {1, 2, 3}, 10000, 10);
+}
+
+TEST_F(DbuctCoinCollectingGameTest, GII5Seed31Track10Moves25)
+{
+    verify_converges_to_optimal(31, 10, {2, 5}, 10000, 5);
+}
+
+TEST_F(DbuctCoinCollectingGameTest, GII3Seed34Track15Moves235)
+{
+    verify_converges_to_optimal(34, 15, {2, 3, 5}, 20000, 3);
+}
+
+// ---------------------------------------------------------------------------
+// DbuctTerminalRewardGameTest
+//
+// Uses position_walker so node handle == position (no path accumulation).
+// Reward is purely the last in-bounds position, independent of path taken.
+// ---------------------------------------------------------------------------
+class DbuctTerminalRewardGameTest : public ::testing::Test
+{
+protected:
+    using bank_t    = monte_carlo::map_table<int, double, std::unordered_map>;
+    using rollout_t = monte_carlo::random_rollout<
+                         jump_t, std::mt19937,
+                         std::vector<jump_t>, std::vector<jump_t>>;
+    using dbuct_t   = monte_carlo::dbuct<
+                         int, jump_t, double,
+                         bank_t, bank_t, bank_t, bank_t,
+                         position_walker,
+                         std::vector<jump_t>, std::vector<jump_t>,
+                         rollout_t>;
+
+    static constexpr double kTolerance = 0.001;
+
+    void train(bank_t&                    bank,
+               const std::vector<double>& track,
+               const std::vector<jump_t>& jumps,
+               std::mt19937&              rng,
+               double                     exploration_constant,
+               size_t                     grant_increment_interval,
+               int                        training_sims)
+    {
+        rollout_t       rollout(rng);
+        position_walker walker;
+
+        dbuct_t d(bank, bank, bank, bank, walker, rollout, -1,
+                  grant_increment_interval, exploration_constant);
+
+        int resume = -1;
+
+        for (int i = 0; i < training_sims; ++i)
+        {
+            int    position = resume;
+            double reward   = 0.0;
+
+            while (true)
+            {
+                jump_t chosen = d.choose(jumps, jumps);
+                int    next   = position + chosen;
+                if (next >= static_cast<int>(track.size()))
+                {
+                    resume = d.terminate(reward);
+                    break;
+                }
+                position = next;
+                reward   = track[position];
+            }
+        }
+    }
+
+    double greedy_run(bank_t&                    bank,
+                      const std::vector<double>& track,
+                      const std::vector<jump_t>& jumps,
+                      std::mt19937&              rng)
+    {
+        rollout_t       rollout(rng);
+        position_walker walker;
+
+        dbuct_t d(bank, bank, bank, bank, walker, rollout, -1,
+                  std::numeric_limits<size_t>::max(), 0.0);
+
+        int    position = -1;
+        double reward   = 0.0;
+
+        while (true)
+        {
+            jump_t chosen = d.choose(jumps, jumps);
+            int    next   = position + chosen;
+            if (next >= static_cast<int>(track.size()))
+            {
+                d.terminate(reward);
+                break;
+            }
+            position = next;
+            reward   = track[position];
+        }
+
+        return reward;
+    }
+
+    void verify_converges_to_optimal(int                        seed,
+                                     size_t                     track_length,
+                                     const std::vector<jump_t>& move_amounts,
+                                     int                        training_sims,
+                                     size_t                     gii =
+                                         std::numeric_limits<size_t>::max())
+    {
+        std::mt19937                           rng(seed);
+        std::uniform_real_distribution<double> urd(-10, 10);
+
+        std::vector<double> track(track_length);
+        std::generate(track.begin(), track.end(), [&] { return urd(rng); });
+
+        std::cerr << "track:";
+        for (double v : track)
+            std::cerr << " " << std::fixed << std::setprecision(3) << v;
+        std::cerr << "\n";
+
+        double exploration_constant = 0.0;
+        for (double c : track)
+            if (c > 0) exploration_constant += c;
+
+        bank_t bank;
+        train(bank, track, move_amounts, rng, exploration_constant, gii, training_sims);
+
+        const double exploitative_score =
+            greedy_run(bank, track, move_amounts, rng);
+        const double optimal = optimal_last_position_score(track, move_amounts);
+
+        EXPECT_NEAR(exploitative_score, optimal, kTolerance);
+    }
+};
+
+// gii = SIZE_MAX  =>  vanilla UCT.
+TEST_F(DbuctTerminalRewardGameTest, VanillaGIISeed40Track10Moves123)
+{
+    verify_converges_to_optimal(40, 10, {1, 2, 3}, 10000);
+}
+
+TEST_F(DbuctTerminalRewardGameTest, VanillaGIISeed44Track10Moves25)
+{
+    verify_converges_to_optimal(44, 10, {2, 5}, 10000);
+}
+
+TEST_F(DbuctTerminalRewardGameTest, VanillaGIISeed46Track15Moves123)
+{
+    verify_converges_to_optimal(46, 15, {1, 2, 3}, 20000);
+}
+
+TEST_F(DbuctTerminalRewardGameTest, VanillaGIISeed49Track20Moves123)
+{
+    verify_converges_to_optimal(49, 20, {1, 2, 3}, 50000);
+}
+
+// Finite gii.
+TEST_F(DbuctTerminalRewardGameTest, GII10Seed40Track10Moves123)
+{
+    verify_converges_to_optimal(40, 10, {1, 2, 3}, 10000, 10);
+}
+
+TEST_F(DbuctTerminalRewardGameTest, GII5Seed44Track10Moves25)
+{
+    verify_converges_to_optimal(44, 10, {2, 5}, 10000, 5);
+}
+
+TEST_F(DbuctTerminalRewardGameTest, GII3Seed46Track15Moves123)
+{
+    verify_converges_to_optimal(46, 15, {1, 2, 3}, 20000, 3);
+}
