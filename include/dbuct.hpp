@@ -3,7 +3,6 @@
 
 #include <cmath>
 #include <limits>
-#include <optional>
 #include <stack>
 
 namespace monte_carlo
@@ -29,12 +28,10 @@ namespace monte_carlo
 //
 // Caller contract:
 //   - Create one dbuct for the entire training run (not one per episode).
-//   - Drive each episode: call choose() per step until terminal, then
-//     call terminate(reward) which returns the node to resume from.
-//   - Reset game state to the returned node before starting the next episode.
-//   - Pass std::nullopt to terminate() if the episode ended without a valid
-//     reward (e.g. the reached state is impossible). The budget slot is still
-//     consumed but no stats are updated.
+//   - Maintain your own path stack of visited nodes alongside the episode.
+//   - Drive each episode: call choose() per step until terminal, then call
+//     terminate(reward) which returns the number of backsteps taken.
+//   - Pop that many entries off your path stack to find the resume node.
 //
 // Zero-default contract: IGetVisits and IGetValue must return 0 for unseen handles.
 //
@@ -74,18 +71,19 @@ struct dbuct
           size_t          grant_increment_interval,
           IFloat          exploration_constant);
 
-    IChoice     choose(const IGetChoiceCount& get_choice_count,
-                       const IGetChoiceAt&    get_choice_at);
+    IChoice choose(const IGetChoiceCount& get_choice_count,
+                   const IGetChoiceAt&    get_choice_at);
 
-    INodeHandle terminate(std::optional<IFloat> reward);
+    size_t terminate(IFloat reward);
 
-    size_t length() const;
+    bool in_rollout() const { return in_rollout_; }
+
 
 private:
     struct frame
     {
         INodeHandle handle;
-        size_t      remaining_budget;
+        size_t      budget;
         size_t      visit_lump; // subtree sim count accumulated; deposited to parent on pop
         IFloat      value_lump; // subtree reward sum accumulated; deposited to parent on pop
     };
@@ -104,7 +102,7 @@ private:
 
     void add_visits(size_t v);
     void add_value(IFloat l);
-    void backtrack();
+    void backstep();
 };
 
 // ---------------------------------------------------------------------------
@@ -202,10 +200,10 @@ dbuct<INodeHandle, IChoice, IFloat,
     IChoice     chosen       = get_choice_at.at(best_i);
     INodeHandle child_handle = walker_.walk(current.handle, chosen);
 
+    size_t remaining_budget = current.budget - current.visit_lump;
     size_t grant_k = std::min(1 + current_visits / grant_increment_interval_,
-                              current.remaining_budget);
+                              remaining_budget);
 
-    current.remaining_budget -= grant_k;
     stack_.push({child_handle, grant_k, 0, IFloat{0}});
 
     return chosen;
@@ -217,35 +215,25 @@ template<typename INodeHandle, typename IChoice, typename IFloat,
          typename IWalker,
          typename IGetChoiceCount, typename IGetChoiceAt,
          typename IRolloutChoose>
-INodeHandle
+size_t
 dbuct<INodeHandle, IChoice, IFloat,
       IGetVisits, IGetValue, ISetVisits, ISetValue,
       IWalker,
       IGetChoiceCount, IGetChoiceAt,
-      IRolloutChoose>::terminate(std::optional<IFloat> reward)
+      IRolloutChoose>::terminate(IFloat reward)
 {
     in_rollout_ = false;
 
-    frame& current = stack_.top();
-
-    if (!reward.has_value())
-    {
-        if (current.remaining_budget != std::numeric_limits<size_t>::max())
-            --current.remaining_budget;
-        while (!stack_.empty() && stack_.top().remaining_budget == 0)
-            stack_.pop();
-        return stack_.top().handle;
-    }
-
-    if (current.remaining_budget != std::numeric_limits<size_t>::max())
-        --current.remaining_budget;
     add_visits(1);
-    add_value(*reward);
+    add_value(reward);
 
-    while (!stack_.empty() && stack_.top().remaining_budget == 0)
-        backtrack();
-
-    return stack_.top().handle;
+    size_t steps = 0;
+    while (stack_.top().visit_lump >= stack_.top().budget)
+    {
+        backstep();
+        ++steps;
+    }
+    return steps;
 }
 
 template<typename INodeHandle, typename IChoice, typename IFloat,
@@ -295,29 +283,14 @@ dbuct<INodeHandle, IChoice, IFloat,
       IGetVisits, IGetValue, ISetVisits, ISetValue,
       IWalker,
       IGetChoiceCount, IGetChoiceAt,
-      IRolloutChoose>::backtrack()
+      IRolloutChoose>::backstep()
 {
-    size_t v = stack_.top().visit_lump;
-    IFloat l = stack_.top().value_lump;
+    const frame& current = stack_.top();
+    size_t v = current.visit_lump;
+    IFloat l = current.value_lump;
     stack_.pop();
     add_visits(v);
     add_value(l);
-}
-
-template<typename INodeHandle, typename IChoice, typename IFloat,
-         typename IGetVisits, typename IGetValue,
-         typename ISetVisits, typename ISetValue,
-         typename IWalker,
-         typename IGetChoiceCount, typename IGetChoiceAt,
-         typename IRolloutChoose>
-size_t
-dbuct<INodeHandle, IChoice, IFloat,
-      IGetVisits, IGetValue, ISetVisits, ISetValue,
-      IWalker,
-      IGetChoiceCount, IGetChoiceAt,
-      IRolloutChoose>::length() const
-{
-    return stack_.size() - 1;
 }
 
 } // namespace monte_carlo

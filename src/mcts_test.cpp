@@ -424,29 +424,32 @@ protected:
         dbuct_t d(bank, bank, bank, bank, walker, rollout, root,
                   grant_increment_interval, exploration_constant);
 
-        std::vector<int> resume = root;
+        std::vector<int> path = root;
 
         for (int i = 0; i < training_sims; ++i)
         {
-            // Accumulate coins already on the path to the resume node.
             double base_score = 0.0;
-            for (int pos : resume)
+            for (int pos : path)
                 if (pos >= 0 && pos < static_cast<int>(track.size()))
                     base_score += track[pos];
 
-            int    position = resume.back();
+            int    position = path.back();
             double ep_score = base_score;
 
             while (true)
             {
                 jump_t chosen = d.choose(jumps, jumps);
                 position += chosen;
+                if (!d.in_rollout())
+                    path.push_back(position);
                 if (position >= static_cast<int>(track.size()))
                     break;
                 ep_score += track[position];
             }
 
-            resume = d.terminate(ep_score);
+            size_t steps = d.terminate(ep_score);
+            for (size_t s = 0; s < steps; ++s)
+                path.pop_back();
         }
     }
 
@@ -462,9 +465,8 @@ protected:
         dbuct_t d(bank, bank, bank, bank, walker, rollout, root,
                   std::numeric_limits<size_t>::max(), 0.0);
 
-        std::vector<int> resume = root;
-        int              position = resume.back();
-        double           ep_score = 0.0;
+        int    position = -1;
+        double ep_score = 0.0;
 
         while (true)
         {
@@ -585,20 +587,24 @@ protected:
         dbuct_t d(bank, bank, bank, bank, walker, rollout, -1,
                   grant_increment_interval, exploration_constant);
 
-        int resume = -1;
+        std::vector<int> path = {-1};
 
         for (int i = 0; i < training_sims; ++i)
         {
-            int    position = resume;
+            int    position = path.back();
             double reward   = 0.0;
 
             while (true)
             {
                 jump_t chosen = d.choose(jumps, jumps);
                 int    next   = position + chosen;
+                if (!d.in_rollout())
+                    path.push_back(next);
                 if (next >= static_cast<int>(track.size()))
                 {
-                    resume = d.terminate(reward);
+                    size_t steps = d.terminate(reward);
+                    for (size_t s = 0; s < steps; ++s)
+                        path.pop_back();
                     break;
                 }
                 position = next;
