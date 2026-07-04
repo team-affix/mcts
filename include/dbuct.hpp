@@ -236,16 +236,12 @@ dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IR
     add_value(reward);
 
     size_t steps = 0;
-    if (!in_rollout_)
-    {
-        backstep();
-        ++steps;
-    }
     while (stack_.top().visit_lump >= stack_.top().budget)
     {
         backstep();
         ++steps;
     }
+    
     in_rollout_ = false;
     return steps;
 }
