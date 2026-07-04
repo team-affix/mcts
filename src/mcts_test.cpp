@@ -116,7 +116,8 @@ double optimal_last_position_score(const std::vector<double>& track,
 class CoinCollectingGameTest : public ::testing::Test
 {
 protected:
-    using bank_t    = monte_carlo::map_table<std::vector<int>, double, path_unordered_map>;
+    using visits_t  = monte_carlo::visits_table<std::vector<int>, path_unordered_map>;
+    using value_t   = monte_carlo::value_table<std::vector<int>, double, path_unordered_map>;
     using rollout_t = monte_carlo::random_rollout<
                          jump_t, std::mt19937,
                          std::vector<jump_t>, std::vector<jump_t>>;
@@ -124,7 +125,8 @@ protected:
     static constexpr double kTolerance = 0.001;
 
     double simulate_once(
-        bank_t&                    bank,
+        visits_t&                  visits,
+        value_t&                   value,
         const std::vector<double>& track,
         const std::vector<jump_t>& jumps,
         std::mt19937&              rng,
@@ -136,12 +138,12 @@ protected:
 
         monte_carlo::sim<
             std::vector<int>, jump_t, double,
-            bank_t, bank_t, bank_t, bank_t,
+            visits_t, value_t, visits_t, value_t,
             path_walker,
             std::vector<jump_t>, std::vector<jump_t>,
             rollout_t,
             monte_carlo::uniform_value_delta<double>
-        > s(bank, bank, bank, bank, walker, rollout, delta,
+        > s(visits, value, visits, value, walker, rollout, delta,
             std::vector<int>{-1}, exploration_constant);
 
         int    position    = -1;
@@ -182,13 +184,14 @@ protected:
         for (double c : track)
             if (c > 0) exploration_constant += c;
 
-        bank_t bank;
+        visits_t visits;
+        value_t  value;
 
         for (int i = 0; i < training_sims; ++i)
-            simulate_once(bank, track, move_amounts, rng, exploration_constant);
+            simulate_once(visits, value, track, move_amounts, rng, exploration_constant);
 
         const double exploitative_score =
-            simulate_once(bank, track, move_amounts, rng, 0.0);
+            simulate_once(visits, value, track, move_amounts, rng, 0.0);
         const double optimal = optimal_cumulative_score(track, move_amounts);
 
         EXPECT_NEAR(exploitative_score, optimal, kTolerance);
@@ -255,7 +258,8 @@ TEST_F(CoinCollectingGameTest, Seed39Track15Moves147)
 class TerminalRewardGameTest : public ::testing::Test
 {
 protected:
-    using bank_t    = monte_carlo::map_table<int, double, std::unordered_map>;
+    using visits_t  = monte_carlo::visits_table<int, std::unordered_map>;
+    using value_t   = monte_carlo::value_table<int, double, std::unordered_map>;
     using rollout_t = monte_carlo::random_rollout<
                          jump_t, std::mt19937,
                          std::vector<jump_t>, std::vector<jump_t>>;
@@ -263,7 +267,8 @@ protected:
     static constexpr double kTolerance = 0.001;
 
     double simulate_once(
-        bank_t&                    bank,
+        visits_t&                  visits,
+        value_t&                   value,
         const std::vector<double>& track,
         const std::vector<jump_t>& jumps,
         std::mt19937&              rng,
@@ -275,12 +280,12 @@ protected:
 
         monte_carlo::sim<
             int, jump_t, double,
-            bank_t, bank_t, bank_t, bank_t,
+            visits_t, value_t, visits_t, value_t,
             position_walker,
             std::vector<jump_t>, std::vector<jump_t>,
             rollout_t,
             monte_carlo::uniform_value_delta<double>
-        > s(bank, bank, bank, bank, walker, rollout, delta, -1, exploration_constant);
+        > s(visits, value, visits, value, walker, rollout, delta, -1, exploration_constant);
 
         int    position = -1;
         double reward   = 0.0;
@@ -323,13 +328,14 @@ protected:
         for (double c : track)
             if (c > 0) exploration_constant += c;
 
-        bank_t bank;
+        visits_t visits;
+        value_t  value;
 
         for (int i = 0; i < training_sims; ++i)
-            simulate_once(bank, track, move_amounts, rng, exploration_constant);
+            simulate_once(visits, value, track, move_amounts, rng, exploration_constant);
 
         const double exploitative_score =
-            simulate_once(bank, track, move_amounts, rng, 0.0);
+            simulate_once(visits, value, track, move_amounts, rng, 0.0);
         const double optimal = optimal_last_position_score(track, move_amounts);
 
         EXPECT_NEAR(exploitative_score, optimal, kTolerance);
@@ -396,20 +402,26 @@ TEST_F(TerminalRewardGameTest, Seed49Track20Moves123)
 class DbuctCoinCollectingGameTest : public ::testing::Test
 {
 protected:
-    using bank_t    = monte_carlo::map_table<std::vector<int>, double, path_unordered_map>;
-    using rollout_t = monte_carlo::random_rollout<
-                         jump_t, std::mt19937,
-                         std::vector<jump_t>, std::vector<jump_t>>;
-    using dbuct_t   = monte_carlo::dbuct<
-                         std::vector<int>, jump_t, double,
-                         bank_t, bank_t, bank_t, bank_t,
-                         path_walker,
-                         std::vector<jump_t>, std::vector<jump_t>,
-                         rollout_t>;
+    using visits_t      = monte_carlo::visits_table<std::vector<int>, path_unordered_map>;
+    using value_t       = monte_carlo::value_table<std::vector<int>, double, path_unordered_map>;
+    using dispatches_t  = monte_carlo::dispatches_table<std::vector<int>, path_unordered_map>;
+    using batch_t       = monte_carlo::linear_batch_increment;
+    using rollout_t     = monte_carlo::random_rollout<
+                             jump_t, std::mt19937,
+                             std::vector<jump_t>, std::vector<jump_t>>;
+    using dbuct_t       = monte_carlo::dbuct<
+                             std::vector<int>, jump_t, double,
+                             visits_t, value_t, visits_t, value_t,
+                             dispatches_t, dispatches_t,
+                             batch_t,
+                             path_walker,
+                             std::vector<jump_t>, std::vector<jump_t>,
+                             rollout_t>;
 
     static constexpr double kTolerance = 0.001;
 
-    void train(bank_t&                    bank,
+    void train(visits_t&                  visits,
+               value_t&                   value,
                const std::vector<double>& track,
                const std::vector<jump_t>& jumps,
                std::mt19937&              rng,
@@ -419,10 +431,12 @@ protected:
     {
         rollout_t        rollout(rng);
         path_walker      walker;
+        dispatches_t     dispatches;
+        batch_t          batch(grant_increment_interval);
         std::vector<int> root = {-1};
 
-        dbuct_t d(bank, bank, bank, bank, walker, rollout, root,
-                  grant_increment_interval, exploration_constant);
+        dbuct_t d(visits, value, visits, value, dispatches, dispatches, batch,
+                  walker, rollout, root, exploration_constant);
 
         std::vector<int> path = root;
 
@@ -453,17 +467,20 @@ protected:
         }
     }
 
-    double greedy_run(bank_t&                    bank,
+    double greedy_run(visits_t&                  visits,
+                      value_t&                   value,
                       const std::vector<double>& track,
                       const std::vector<jump_t>& jumps,
                       std::mt19937&              rng)
     {
         rollout_t        rollout(rng);
         path_walker      walker;
+        dispatches_t     dispatches;
+        batch_t          batch(std::numeric_limits<size_t>::max());
         std::vector<int> root = {-1};
 
-        dbuct_t d(bank, bank, bank, bank, walker, rollout, root,
-                  std::numeric_limits<size_t>::max(), 0.0);
+        dbuct_t d(visits, value, visits, value, dispatches, dispatches, batch,
+                  walker, rollout, root, 0.0);
 
         int    position = -1;
         double ep_score = 0.0;
@@ -503,11 +520,12 @@ protected:
         for (double c : track)
             if (c > 0) exploration_constant += c;
 
-        bank_t bank;
-        train(bank, track, move_amounts, rng, exploration_constant, gii, training_sims);
+        visits_t visits;
+        value_t  value;
+        train(visits, value, track, move_amounts, rng, exploration_constant, gii, training_sims);
 
         const double exploitative_score =
-            greedy_run(bank, track, move_amounts, rng);
+            greedy_run(visits, value, track, move_amounts, rng);
         const double optimal = optimal_cumulative_score(track, move_amounts);
 
         EXPECT_NEAR(exploitative_score, optimal, kTolerance);
@@ -560,20 +578,26 @@ TEST_F(DbuctCoinCollectingGameTest, GII3Seed34Track15Moves235)
 class DbuctTerminalRewardGameTest : public ::testing::Test
 {
 protected:
-    using bank_t    = monte_carlo::map_table<int, double, std::unordered_map>;
-    using rollout_t = monte_carlo::random_rollout<
-                         jump_t, std::mt19937,
-                         std::vector<jump_t>, std::vector<jump_t>>;
-    using dbuct_t   = monte_carlo::dbuct<
-                         int, jump_t, double,
-                         bank_t, bank_t, bank_t, bank_t,
-                         position_walker,
-                         std::vector<jump_t>, std::vector<jump_t>,
-                         rollout_t>;
+    using visits_t      = monte_carlo::visits_table<int, std::unordered_map>;
+    using value_t       = monte_carlo::value_table<int, double, std::unordered_map>;
+    using dispatches_t  = monte_carlo::dispatches_table<int, std::unordered_map>;
+    using batch_t       = monte_carlo::linear_batch_increment;
+    using rollout_t     = monte_carlo::random_rollout<
+                             jump_t, std::mt19937,
+                             std::vector<jump_t>, std::vector<jump_t>>;
+    using dbuct_t       = monte_carlo::dbuct<
+                             int, jump_t, double,
+                             visits_t, value_t, visits_t, value_t,
+                             dispatches_t, dispatches_t,
+                             batch_t,
+                             position_walker,
+                             std::vector<jump_t>, std::vector<jump_t>,
+                             rollout_t>;
 
     static constexpr double kTolerance = 0.001;
 
-    void train(bank_t&                    bank,
+    void train(visits_t&                  visits,
+               value_t&                   value,
                const std::vector<double>& track,
                const std::vector<jump_t>& jumps,
                std::mt19937&              rng,
@@ -583,9 +607,11 @@ protected:
     {
         rollout_t       rollout(rng);
         position_walker walker;
+        dispatches_t    dispatches;
+        batch_t         batch(grant_increment_interval);
 
-        dbuct_t d(bank, bank, bank, bank, walker, rollout, -1,
-                  grant_increment_interval, exploration_constant);
+        dbuct_t d(visits, value, visits, value, dispatches, dispatches, batch,
+                  walker, rollout, -1, exploration_constant);
 
         std::vector<int> path = {-1};
 
@@ -613,16 +639,19 @@ protected:
         }
     }
 
-    double greedy_run(bank_t&                    bank,
+    double greedy_run(visits_t&                  visits,
+                      value_t&                   value,
                       const std::vector<double>& track,
                       const std::vector<jump_t>& jumps,
                       std::mt19937&              rng)
     {
         rollout_t       rollout(rng);
         position_walker walker;
+        dispatches_t    dispatches;
+        batch_t         batch(std::numeric_limits<size_t>::max());
 
-        dbuct_t d(bank, bank, bank, bank, walker, rollout, -1,
-                  std::numeric_limits<size_t>::max(), 0.0);
+        dbuct_t d(visits, value, visits, value, dispatches, dispatches, batch,
+                  walker, rollout, -1, 0.0);
 
         int    position = -1;
         double reward   = 0.0;
@@ -665,11 +694,12 @@ protected:
         for (double c : track)
             if (c > 0) exploration_constant += c;
 
-        bank_t bank;
-        train(bank, track, move_amounts, rng, exploration_constant, gii, training_sims);
+        visits_t visits;
+        value_t  value;
+        train(visits, value, track, move_amounts, rng, exploration_constant, gii, training_sims);
 
         const double exploitative_score =
-            greedy_run(bank, track, move_amounts, rng);
+            greedy_run(visits, value, track, move_amounts, rng);
         const double optimal = optimal_last_position_score(track, move_amounts);
 
         EXPECT_NEAR(exploitative_score, optimal, kTolerance);
@@ -723,20 +753,26 @@ TEST_F(DbuctTerminalRewardGameTest, GII3Seed46Track15Moves123)
 class DbuctStatEquivalenceTest : public ::testing::Test
 {
 protected:
-    using bank_t    = monte_carlo::map_table<int, double, std::unordered_map>;
-    using rollout_t = monte_carlo::random_rollout<
-                         jump_t, std::mt19937,
-                         std::vector<jump_t>, std::vector<jump_t>>;
-    using dbuct_t   = monte_carlo::dbuct<
-                         int, jump_t, double,
-                         bank_t, bank_t, bank_t, bank_t,
-                         position_walker,
-                         std::vector<jump_t>, std::vector<jump_t>,
-                         rollout_t>;
+    using visits_t      = monte_carlo::visits_table<int, std::unordered_map>;
+    using value_t       = monte_carlo::value_table<int, double, std::unordered_map>;
+    using dispatches_t  = monte_carlo::dispatches_table<int, std::unordered_map>;
+    using batch_t       = monte_carlo::linear_batch_increment;
+    using rollout_t     = monte_carlo::random_rollout<
+                             jump_t, std::mt19937,
+                             std::vector<jump_t>, std::vector<jump_t>>;
+    using dbuct_t       = monte_carlo::dbuct<
+                             int, jump_t, double,
+                             visits_t, value_t, visits_t, value_t,
+                             dispatches_t, dispatches_t,
+                             batch_t,
+                             position_walker,
+                             std::vector<jump_t>, std::vector<jump_t>,
+                             rollout_t>;
 
     // One sim episode using the terminal-reward convention (reward = last
     // in-bounds position's track value).
-    void sim_episode(bank_t&                    bank,
+    void sim_episode(visits_t&                  visits,
+                     value_t&                   value,
                      const std::vector<double>& track,
                      const std::vector<jump_t>& jumps,
                      std::mt19937&              rng,
@@ -748,12 +784,12 @@ protected:
 
         monte_carlo::sim<
             int, jump_t, double,
-            bank_t, bank_t, bank_t, bank_t,
+            visits_t, value_t, visits_t, value_t,
             position_walker,
             std::vector<jump_t>, std::vector<jump_t>,
             rollout_t,
             monte_carlo::uniform_value_delta<double>
-        > s(bank, bank, bank, bank, walker, rollout, delta, -1, c);
+        > s(visits, value, visits, value, walker, rollout, delta, -1, c);
 
         int    position = -1;
         double reward   = 0.0;
@@ -774,7 +810,8 @@ protected:
     }
 
     // N dbuct episodes with GII=SIZE_MAX (≡ vanilla UCT).
-    void dbuct_episodes(bank_t&                    bank,
+    void dbuct_episodes(visits_t&                  visits,
+                        value_t&                   value,
                         const std::vector<double>& track,
                         const std::vector<jump_t>& jumps,
                         std::mt19937&              rng,
@@ -783,9 +820,11 @@ protected:
     {
         rollout_t       rollout(rng);
         position_walker walker;
+        dispatches_t    dispatches;
+        batch_t         batch(std::numeric_limits<size_t>::max());
 
-        dbuct_t d(bank, bank, bank, bank, walker, rollout, -1,
-                  std::numeric_limits<size_t>::max(), c);
+        dbuct_t d(visits, value, visits, value, dispatches, dispatches, batch,
+                  walker, rollout, -1, c);
 
         std::vector<int> path = {-1};
 
@@ -822,17 +861,18 @@ TEST_F(DbuctStatEquivalenceTest, MatchesSimSeed100Track5Moves12)
     const int                 N     = 200;
 
     std::mt19937 rng1(100), rng2(100);
-    bank_t       bank_sim, bank_dbuct;
+    visits_t     sim_visits,   dbuct_visits;
+    value_t      sim_value,    dbuct_value;
 
     for (int i = 0; i < N; ++i)
-        sim_episode(bank_sim, track, jumps, rng1, c);
-    dbuct_episodes(bank_dbuct, track, jumps, rng2, c, N);
+        sim_episode(sim_visits, sim_value, track, jumps, rng1, c);
+    dbuct_episodes(dbuct_visits, dbuct_value, track, jumps, rng2, c, N);
 
     for (int pos = -1; pos < static_cast<int>(track.size()); ++pos)
     {
-        EXPECT_EQ(bank_sim.get_visits(pos), bank_dbuct.get_visits(pos))
+        EXPECT_EQ(sim_visits.get_visits(pos), dbuct_visits.get_visits(pos))
             << "visits mismatch at pos=" << pos;
-        EXPECT_DOUBLE_EQ(bank_sim.get_value(pos), bank_dbuct.get_value(pos))
+        EXPECT_DOUBLE_EQ(sim_value.get_value(pos), dbuct_value.get_value(pos))
             << "value mismatch at pos=" << pos;
     }
 }
@@ -845,17 +885,18 @@ TEST_F(DbuctStatEquivalenceTest, MatchesSimSeed200Track4Moves13)
     const int                 N     = 300;
 
     std::mt19937 rng1(200), rng2(200);
-    bank_t       bank_sim, bank_dbuct;
+    visits_t     sim_visits,   dbuct_visits;
+    value_t      sim_value,    dbuct_value;
 
     for (int i = 0; i < N; ++i)
-        sim_episode(bank_sim, track, jumps, rng1, c);
-    dbuct_episodes(bank_dbuct, track, jumps, rng2, c, N);
+        sim_episode(sim_visits, sim_value, track, jumps, rng1, c);
+    dbuct_episodes(dbuct_visits, dbuct_value, track, jumps, rng2, c, N);
 
     for (int pos = -1; pos < static_cast<int>(track.size()); ++pos)
     {
-        EXPECT_EQ(bank_sim.get_visits(pos), bank_dbuct.get_visits(pos))
+        EXPECT_EQ(sim_visits.get_visits(pos), dbuct_visits.get_visits(pos))
             << "visits mismatch at pos=" << pos;
-        EXPECT_DOUBLE_EQ(bank_sim.get_value(pos), bank_dbuct.get_value(pos))
+        EXPECT_DOUBLE_EQ(sim_value.get_value(pos), dbuct_value.get_value(pos))
             << "value mismatch at pos=" << pos;
     }
 }
@@ -868,17 +909,18 @@ TEST_F(DbuctStatEquivalenceTest, MatchesSimSeed300Track6Moves123)
     const int                 N     = 500;
 
     std::mt19937 rng1(300), rng2(300);
-    bank_t       bank_sim, bank_dbuct;
+    visits_t     sim_visits,   dbuct_visits;
+    value_t      sim_value,    dbuct_value;
 
     for (int i = 0; i < N; ++i)
-        sim_episode(bank_sim, track, jumps, rng1, c);
-    dbuct_episodes(bank_dbuct, track, jumps, rng2, c, N);
+        sim_episode(sim_visits, sim_value, track, jumps, rng1, c);
+    dbuct_episodes(dbuct_visits, dbuct_value, track, jumps, rng2, c, N);
 
     for (int pos = -1; pos < static_cast<int>(track.size()); ++pos)
     {
-        EXPECT_EQ(bank_sim.get_visits(pos), bank_dbuct.get_visits(pos))
+        EXPECT_EQ(sim_visits.get_visits(pos), dbuct_visits.get_visits(pos))
             << "visits mismatch at pos=" << pos;
-        EXPECT_DOUBLE_EQ(bank_sim.get_value(pos), bank_dbuct.get_value(pos))
+        EXPECT_DOUBLE_EQ(sim_value.get_value(pos), dbuct_value.get_value(pos))
             << "value mismatch at pos=" << pos;
     }
 }
@@ -894,16 +936,21 @@ TEST_F(DbuctStatEquivalenceTest, MatchesSimSeed300Track6Moves123)
 class DbuctInRolloutTest : public ::testing::Test
 {
 protected:
-    using bank_t    = monte_carlo::map_table<int, double, std::unordered_map>;
-    using rollout_t = monte_carlo::random_rollout<
-                         jump_t, std::mt19937,
-                         std::vector<jump_t>, std::vector<jump_t>>;
-    using dbuct_t   = monte_carlo::dbuct<
-                         int, jump_t, double,
-                         bank_t, bank_t, bank_t, bank_t,
-                         position_walker,
-                         std::vector<jump_t>, std::vector<jump_t>,
-                         rollout_t>;
+    using visits_t      = monte_carlo::visits_table<int, std::unordered_map>;
+    using value_t       = monte_carlo::value_table<int, double, std::unordered_map>;
+    using dispatches_t  = monte_carlo::dispatches_table<int, std::unordered_map>;
+    using batch_t       = monte_carlo::linear_batch_increment;
+    using rollout_t     = monte_carlo::random_rollout<
+                             jump_t, std::mt19937,
+                             std::vector<jump_t>, std::vector<jump_t>>;
+    using dbuct_t       = monte_carlo::dbuct<
+                             int, jump_t, double,
+                             visits_t, value_t, visits_t, value_t,
+                             dispatches_t, dispatches_t,
+                             batch_t,
+                             position_walker,
+                             std::vector<jump_t>, std::vector<jump_t>,
+                             rollout_t>;
 };
 
 TEST_F(DbuctInRolloutTest, FlagTransitionsEpisodes1And2)
@@ -913,12 +960,15 @@ TEST_F(DbuctInRolloutTest, FlagTransitionsEpisodes1And2)
     const std::vector<double> track = {5.0};
     const std::vector<jump_t> jumps = {1};
     std::mt19937              rng(0);
-    bank_t                    bank;
+    visits_t                  visits;
+    value_t                   value;
     rollout_t                 rollout(rng);
     position_walker           walker;
+    dispatches_t              dispatches;
+    batch_t                   batch(std::numeric_limits<size_t>::max());
 
-    dbuct_t d(bank, bank, bank, bank, walker, rollout, -1,
-              std::numeric_limits<size_t>::max(), 1.0);
+    dbuct_t d(visits, value, visits, value, dispatches, dispatches, batch,
+              walker, rollout, -1, 1.0);
 
     // Episode 1: root has 0 visits → in_rollout flips on the very first choose().
     EXPECT_FALSE(d.in_rollout());
@@ -955,16 +1005,21 @@ TEST_F(DbuctInRolloutTest, FlagTransitionsEpisodes1And2)
 class DbuctBackstepCountTest : public ::testing::Test
 {
 protected:
-    using bank_t    = monte_carlo::map_table<int, double, std::unordered_map>;
-    using rollout_t = monte_carlo::random_rollout<
-                         jump_t, std::mt19937,
-                         std::vector<jump_t>, std::vector<jump_t>>;
-    using dbuct_t   = monte_carlo::dbuct<
-                         int, jump_t, double,
-                         bank_t, bank_t, bank_t, bank_t,
-                         position_walker,
-                         std::vector<jump_t>, std::vector<jump_t>,
-                         rollout_t>;
+    using visits_t      = monte_carlo::visits_table<int, std::unordered_map>;
+    using value_t       = monte_carlo::value_table<int, double, std::unordered_map>;
+    using dispatches_t  = monte_carlo::dispatches_table<int, std::unordered_map>;
+    using batch_t       = monte_carlo::linear_batch_increment;
+    using rollout_t     = monte_carlo::random_rollout<
+                             jump_t, std::mt19937,
+                             std::vector<jump_t>, std::vector<jump_t>>;
+    using dbuct_t       = monte_carlo::dbuct<
+                             int, jump_t, double,
+                             visits_t, value_t, visits_t, value_t,
+                             dispatches_t, dispatches_t,
+                             batch_t,
+                             position_walker,
+                             std::vector<jump_t>, std::vector<jump_t>,
+                             rollout_t>;
 
     size_t run_episode(dbuct_t&                   d,
                        const std::vector<double>& track,
@@ -1001,12 +1056,15 @@ TEST_F(DbuctBackstepCountTest, GrowingDepthGIIMax)
     const std::vector<double> track = {1.0, 1.0, 1.0};
     const std::vector<jump_t> jumps = {1};
     std::mt19937              rng(42);
-    bank_t                    bank;
+    visits_t                  visits;
+    value_t                   value;
     rollout_t                 rollout(rng);
     position_walker           walker;
+    dispatches_t              dispatches;
+    batch_t                   batch(std::numeric_limits<size_t>::max());
 
-    dbuct_t d(bank, bank, bank, bank, walker, rollout, -1,
-              std::numeric_limits<size_t>::max(), 0.0);
+    dbuct_t d(visits, value, visits, value, dispatches, dispatches, batch,
+              walker, rollout, -1, 0.0);
 
     std::vector<int> path = {-1};
 
@@ -1028,16 +1086,21 @@ TEST_F(DbuctBackstepCountTest, GrowingDepthGIIMax)
 class DbuctGrantFormulaTest : public ::testing::Test
 {
 protected:
-    using bank_t    = monte_carlo::map_table<int, double, std::unordered_map>;
-    using rollout_t = monte_carlo::random_rollout<
-                         jump_t, std::mt19937,
-                         std::vector<jump_t>, std::vector<jump_t>>;
-    using dbuct_t   = monte_carlo::dbuct<
-                         int, jump_t, double,
-                         bank_t, bank_t, bank_t, bank_t,
-                         position_walker,
-                         std::vector<jump_t>, std::vector<jump_t>,
-                         rollout_t>;
+    using visits_t      = monte_carlo::visits_table<int, std::unordered_map>;
+    using value_t       = monte_carlo::value_table<int, double, std::unordered_map>;
+    using dispatches_t  = monte_carlo::dispatches_table<int, std::unordered_map>;
+    using batch_t       = monte_carlo::linear_batch_increment;
+    using rollout_t     = monte_carlo::random_rollout<
+                             jump_t, std::mt19937,
+                             std::vector<jump_t>, std::vector<jump_t>>;
+    using dbuct_t       = monte_carlo::dbuct<
+                             int, jump_t, double,
+                             visits_t, value_t, visits_t, value_t,
+                             dispatches_t, dispatches_t,
+                             batch_t,
+                             position_walker,
+                             std::vector<jump_t>, std::vector<jump_t>,
+                             rollout_t>;
 
     void run_episode(dbuct_t&                   d,
                      const std::vector<double>& track,
@@ -1065,85 +1128,92 @@ protected:
         }
     }
 
-    // Runs episodes until bank.get_visits(-1) increases, then returns the delta.
+    // Runs episodes until visits.get_visits(-1) increases, then returns the delta.
     // The delta equals the grant_k assigned to the child that just backstep-ed.
     size_t run_grant_period(dbuct_t&                   d,
-                            bank_t&                    bank,
+                            visits_t&                  visits,
                             const std::vector<double>& track,
                             const std::vector<jump_t>& jumps,
                             std::vector<int>&          path)
     {
-        size_t before = bank.get_visits(-1);
-        while (bank.get_visits(-1) == before)
+        size_t before = visits.get_visits(-1);
+        while (visits.get_visits(-1) == before)
             run_episode(d, track, jumps, path);
-        return bank.get_visits(-1) - before;
+        return visits.get_visits(-1) - before;
     }
 };
 
-TEST_F(DbuctGrantFormulaTest, GrantGrowsWithRootVisitsGII3)
+TEST_F(DbuctGrantFormulaTest, GrantGrowsWithRootDispatchesGII3)
 {
     // Single-path game: root → pos0 → OOB.
-    // root's bank.visits only increments in bulk when pos0's frame backsteps.
-    // The bulk increment equals pos0's budget = 1 + N/GII (N = visits at dispatch).
+    // Each grant period root dispatches pos0 exactly once (D increments by 1).
+    // grant_k = 1 + D_before / GII, verified via the delta in visits.get_visits(-1).
     const std::vector<double> track = {1.0};
     const std::vector<jump_t> jumps = {1};
     const size_t              GII   = 3;
     std::mt19937              rng(0);
-    bank_t                    bank;
+    visits_t                  visits;
+    value_t                   value;
+    dispatches_t              dispatches;
+    batch_t                   batch(GII);
     rollout_t                 rollout(rng);
     position_walker           walker;
 
-    dbuct_t d(bank, bank, bank, bank, walker, rollout, -1, GII, 0.0);
+    dbuct_t d(visits, value, visits, value, dispatches, dispatches, batch,
+              walker, rollout, -1, 0.0);
     std::vector<int> path = {-1};
 
-    // Each row: {expected root.visits before the period, expected grant_k}.
-    // Formula: grant_k = 1 + N/GII (integer division).
-    //   N=0→1, N=1→1, N=2→1, N=3→2, N=5→2, N=7→3, N=10→4
-    const std::vector<std::pair<size_t, size_t>> cases = {
-        {0, 1}, {1, 1}, {2, 1}, {3, 2}, {5, 2}, {7, 3}, {10, 4}
-    };
+    // Seed root's initial visit (rollout phase; no UCB dispatch happens here).
+    run_grant_period(d, visits, track, jumps, path);
+    ASSERT_EQ(visits.get_visits(-1), 1u) << "expected root to have 1 visit after seed";
 
-    for (const auto& kv : cases)
+    // From here, every period involves exactly one UCB dispatch from root.
+    // Formula: grant_k = 1 + D_before / GII (integer division).
+    for (size_t period = 0; period < 10; ++period)
     {
-        const size_t expected_N     = kv.first;
-        const size_t expected_grant = kv.second;
-        ASSERT_EQ(bank.get_visits(-1), expected_N)
-            << "precondition: root should have " << expected_N << " visits";
-        const size_t actual_grant = run_grant_period(d, bank, track, jumps, path);
-        EXPECT_EQ(actual_grant, expected_grant)
-            << "grant mismatch for N=" << expected_N << " GII=" << GII;
+        const size_t D_before = dispatches.get_dispatches(-1);
+        const size_t V_before = visits.get_visits(-1);
+        run_grant_period(d, visits, track, jumps, path);
+        EXPECT_EQ(dispatches.get_dispatches(-1), D_before + 1)
+            << "dispatch count did not increment at period=" << period;
+        EXPECT_EQ(visits.get_visits(-1) - V_before, 1 + D_before / GII)
+            << "grant mismatch at period=" << period
+            << " D_before=" << D_before << " GII=" << GII;
     }
 }
 
-TEST_F(DbuctGrantFormulaTest, GrantGrowsWithRootVisitsGII5)
+TEST_F(DbuctGrantFormulaTest, GrantGrowsWithRootDispatchesGII5)
 {
     const std::vector<double> track = {1.0};
     const std::vector<jump_t> jumps = {1};
     const size_t              GII   = 5;
     std::mt19937              rng(0);
-    bank_t                    bank;
+    visits_t                  visits;
+    value_t                   value;
+    dispatches_t              dispatches;
+    batch_t                   batch(GII);
     rollout_t                 rollout(rng);
     position_walker           walker;
 
-    dbuct_t d(bank, bank, bank, bank, walker, rollout, -1, GII, 0.0);
+    dbuct_t d(visits, value, visits, value, dispatches, dispatches, batch,
+              walker, rollout, -1, 0.0);
     std::vector<int> path = {-1};
 
-    // GII=5: grant stays 1 for N=0..4, then rises by 1 every 5 root visits.
-    //   N=0→1, N=1→1, N=2→1, N=3→1, N=4→1, N=5→2, N=7→2, N=9→2, N=11→3
-    const std::vector<std::pair<size_t, size_t>> cases = {
-        {0, 1}, {1, 1}, {2, 1}, {3, 1}, {4, 1},
-        {5, 2}, {7, 2}, {9, 2}, {11, 3}
-    };
+    // Seed root's initial visit (rollout phase; no UCB dispatch happens here).
+    run_grant_period(d, visits, track, jumps, path);
+    ASSERT_EQ(visits.get_visits(-1), 1u) << "expected root to have 1 visit after seed";
 
-    for (const auto& kv : cases)
+    // GII=5: grant stays 1 for D=0..4, then rises by 1 every 5 dispatches.
+    for (size_t period = 0; period < 12; ++period)
     {
-        const size_t expected_N     = kv.first;
-        const size_t expected_grant = kv.second;
-        ASSERT_EQ(bank.get_visits(-1), expected_N)
-            << "precondition: root should have " << expected_N << " visits";
-        const size_t actual_grant = run_grant_period(d, bank, track, jumps, path);
-        EXPECT_EQ(actual_grant, expected_grant)
-            << "grant mismatch for N=" << expected_N << " GII=" << GII;
+        const size_t D_before = dispatches.get_dispatches(-1);
+        const size_t V_before = visits.get_visits(-1);
+        run_grant_period(d, visits, track, jumps, path);
+        EXPECT_EQ(dispatches.get_dispatches(-1), D_before + 1)
+            << "dispatch count did not increment at period=" << period;
+        EXPECT_EQ(visits.get_visits(-1) - V_before, 1 + D_before / GII)
+            << "grant mismatch at period=" << period
+            << " D_before=" << D_before << " GII=" << GII;
     }
 }
 
@@ -1160,16 +1230,21 @@ TEST_F(DbuctGrantFormulaTest, GrantGrowsWithRootVisitsGII5)
 class DbuctCampingLumpTest : public ::testing::Test
 {
 protected:
-    using bank_t    = monte_carlo::map_table<int, double, std::unordered_map>;
-    using rollout_t = monte_carlo::random_rollout<
-                         jump_t, std::mt19937,
-                         std::vector<jump_t>, std::vector<jump_t>>;
-    using dbuct_t   = monte_carlo::dbuct<
-                         int, jump_t, double,
-                         bank_t, bank_t, bank_t, bank_t,
-                         position_walker,
-                         std::vector<jump_t>, std::vector<jump_t>,
-                         rollout_t>;
+    using visits_t      = monte_carlo::visits_table<int, std::unordered_map>;
+    using value_t       = monte_carlo::value_table<int, double, std::unordered_map>;
+    using dispatches_t  = monte_carlo::dispatches_table<int, std::unordered_map>;
+    using batch_t       = monte_carlo::linear_batch_increment;
+    using rollout_t     = monte_carlo::random_rollout<
+                             jump_t, std::mt19937,
+                             std::vector<jump_t>, std::vector<jump_t>>;
+    using dbuct_t       = monte_carlo::dbuct<
+                             int, jump_t, double,
+                             visits_t, value_t, visits_t, value_t,
+                             dispatches_t, dispatches_t,
+                             batch_t,
+                             position_walker,
+                             std::vector<jump_t>, std::vector<jump_t>,
+                             rollout_t>;
 
     // Runs one episode and returns the reward value passed to terminate().
     // Reward is pre-initialised from the starting position so that camping
@@ -1203,25 +1278,26 @@ protected:
 
     struct PeriodResult { size_t delta_visits; double delta_value; double sum_rewards; };
 
-    // Drives episodes until bank.get_visits(-1) changes and returns:
+    // Drives episodes until visits.get_visits(-1) changes and returns:
     //   delta_visits  — how much root.visits grew (equals grant_k)
     //   delta_value   — how much root.value grew
     //   sum_rewards   — sum of every reward the caller passed to terminate()
     //
     // The lump invariant asserts delta_value == sum_rewards exactly.
     PeriodResult run_grant_period(dbuct_t&                   d,
-                                  bank_t&                    bank,
+                                  visits_t&                  visits,
+                                  value_t&                   value,
                                   const std::vector<double>& track,
                                   const std::vector<jump_t>& jumps,
                                   std::vector<int>&          path)
     {
-        const size_t before_v   = bank.get_visits(-1);
-        const double before_val = bank.get_value(-1);
+        const size_t before_v   = visits.get_visits(-1);
+        const double before_val = value.get_value(-1);
         double       sum        = 0.0;
-        while (bank.get_visits(-1) == before_v)
+        while (visits.get_visits(-1) == before_v)
             sum += run_episode(d, track, jumps, path);
-        return {bank.get_visits(-1) - before_v,
-                bank.get_value(-1)  - before_val,
+        return {visits.get_visits(-1) - before_v,
+                value.get_value(-1)   - before_val,
                 sum};
     }
 };
@@ -1229,38 +1305,38 @@ protected:
 TEST_F(DbuctCampingLumpTest, LumpInvariantHoldsAcrossGrantPeriods)
 {
     // track={7.0}: pos0 in-bounds (value 7.0), pos1+ OOB.
-    // The lump invariant: bank.value[root] delta == sum of all rewards
+    // The lump invariant: value[root] delta == sum of all rewards
     // supplied to terminate() during that grant period.  This holds
     // regardless of nested frame depth or which episodes yield 0 reward.
+    // The dispatch-based grant check: delta_visits == 1 + D_before / GII.
     const std::vector<double> track = {7.0};
     const std::vector<jump_t> jumps = {1};
     const size_t              GII   = 2;
     std::mt19937              rng(0);
-    bank_t                    bank;
+    visits_t                  visits;
+    value_t                   value;
+    dispatches_t              dispatches;
+    batch_t                   batch(GII);
     rollout_t                 rollout(rng);
     position_walker           walker;
 
-    dbuct_t d(bank, bank, bank, bank, walker, rollout, -1, GII, 0.0);
+    dbuct_t d(visits, value, visits, value, dispatches, dispatches, batch,
+              walker, rollout, -1, 0.0);
     std::vector<int> path = {-1};
 
-    // GII=2: grant = 1 + N/2.
-    //   N=0→1, N=1→1, N=2→2, N=4→3, N=7→4 (7/2=3, so 1+3=4)
-    const std::vector<std::pair<size_t, size_t>> cases = {
-        {0, 1}, {1, 1}, {2, 2}, {4, 3}, {7, 4}
-    };
-
-    for (const auto& kv : cases)
+    // Loop over 10 sequential periods.
+    // For each: assert dispatch-based grant and lump invariant.
+    for (size_t period = 0; period < 10; ++period)
     {
-        const size_t expected_N     = kv.first;
-        const size_t expected_grant = kv.second;
-        ASSERT_EQ(bank.get_visits(-1), expected_N)
-            << "precondition: root should have " << expected_N << " visits";
-        const PeriodResult r = run_grant_period(d, bank, track, jumps, path);
+        const size_t D_before        = dispatches.get_dispatches(-1);
+        const size_t expected_grant  = 1 + D_before / GII;
+        const PeriodResult r = run_grant_period(d, visits, value, track, jumps, path);
         EXPECT_EQ(r.delta_visits, expected_grant)
-            << "visits delta wrong for N=" << expected_N << " GII=" << GII;
+            << "visits delta wrong for period=" << period
+            << " D_before=" << D_before << " GII=" << GII;
         EXPECT_DOUBLE_EQ(r.delta_value, r.sum_rewards)
-            << "value lump mismatch for N=" << expected_N
-            << " GII=" << GII << " (delta_value=" << r.delta_value
+            << "value lump mismatch for period=" << period
+            << " (delta_value=" << r.delta_value
             << " sum_rewards=" << r.sum_rewards << ")";
     }
 }

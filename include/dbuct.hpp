@@ -9,22 +9,27 @@ namespace monte_carlo
 {
 
 // Standard template parameter order:
-//   1. domain types  — INodeHandle, IChoice, IFloat
-//   2. read stats    — IGetVisits, IGetValue
-//   3. write stats   — ISetVisits, ISetValue
-//   4. graph         — IWalker
-//   5. choice access — IGetChoiceCount, IGetChoiceAt
-//   6. rollout       — IRolloutChoose
+//   1. domain types    — INodeHandle, IChoice, IFloat
+//   2. read stats      — IGetVisits, IGetValue
+//   3. write stats     — ISetVisits, ISetValue
+//   4. dispatch stats  — IGetDispatches, ISetDispatches
+//   5. batch policy    — IComputeBatchSize
+//   6. graph           — IWalker
+//   7. choice access   — IGetChoiceCount, IGetChoiceAt
+//   8. rollout         — IRolloutChoose
 //
-// Policy requirements (same as sim except IGetValueDelta is absent):
-//   IGetVisits:      get_visits(const INodeHandle&) -> size_t   -- 0 if unseen
-//   IGetValue:       get_value(const INodeHandle&)  -> IFloat   -- 0 if unseen
-//   ISetVisits:      set_visits(const INodeHandle&, size_t) -> void
-//   ISetValue:       set_value(const INodeHandle&, IFloat)  -> void
-//   IWalker:         walk(const INodeHandle&, const IChoice&) -> INodeHandle
-//   IGetChoiceCount: size() -> size_t
-//   IGetChoiceAt:    at(size_t) -> IChoice
-//   IRolloutChoose:  rollout_choose(const IGetChoiceCount&, const IGetChoiceAt&) -> IChoice
+// Policy requirements:
+//   IGetVisits:       get_visits(const INodeHandle&) -> size_t   -- 0 if unseen
+//   IGetValue:        get_value(const INodeHandle&)  -> IFloat   -- 0 if unseen
+//   ISetVisits:       set_visits(const INodeHandle&, size_t) -> void
+//   ISetValue:        set_value(const INodeHandle&, IFloat)  -> void
+//   IGetDispatches:   get_dispatches(const INodeHandle&) -> size_t  -- 0 if unseen
+//   ISetDispatches:   set_dispatches(const INodeHandle&, size_t) -> void
+//   IComputeBatchSize:compute_batch_size(size_t dispatch_count) -> size_t
+//   IWalker:          walk(const INodeHandle&, const IChoice&) -> INodeHandle
+//   IGetChoiceCount:  size() -> size_t
+//   IGetChoiceAt:     at(size_t) -> IChoice
+//   IRolloutChoose:   rollout_choose(const IGetChoiceCount&, const IGetChoiceAt&) -> IChoice
 //
 // Caller contract:
 //   - Create one dbuct for the entire training run (not one per episode).
@@ -33,14 +38,14 @@ namespace monte_carlo
 //     terminate(reward) which returns the number of backsteps taken.
 //   - Pop that many entries off your path stack to find the resume node.
 //
-// Zero-default contract: IGetVisits and IGetValue must return 0 for unseen handles.
+// Zero-default contract: IGetVisits, IGetValue, IGetDispatches must return 0
+//   for unseen handles.
 //
 // Grant formula:
-//   grant(N) = 1 + N / grant_increment_interval
-//   k        = min(grant(N), remaining_budget)
-//
-//   grant_increment_interval = SIZE_MAX  ->  k = 1 always  ->  vanilla UCT.
-//   grant_increment_interval must be > 0.
+//   IComputeBatchSize::compute_batch_size(D) is called with the pre-increment
+//   dispatch count D for the current node.  linear_batch_increment implements
+//   1 + D / B, where B is the grant_increment_interval.
+//   B = SIZE_MAX gives compute_batch_size = 1 always, equivalent to vanilla UCT.
 //
 // UCB1:
 //   exploit = get_value(child) / get_visits(child)
@@ -54,6 +59,9 @@ template<
     typename IGetValue,
     typename ISetVisits,
     typename ISetValue,
+    typename IGetDispatches,
+    typename ISetDispatches,
+    typename IComputeBatchSize,
     typename IWalker,
     typename IGetChoiceCount,
     typename IGetChoiceAt,
@@ -61,15 +69,17 @@ template<
 >
 struct dbuct
 {
-    dbuct(IGetVisits&     get_visits,
-          IGetValue&      get_value,
-          ISetVisits&     set_visits,
-          ISetValue&      set_value,
-          IWalker&        walker,
-          IRolloutChoose& rollout,
-          INodeHandle     root,
-          size_t          grant_increment_interval,
-          IFloat          exploration_constant);
+    dbuct(IGetVisits&      get_visits,
+          IGetValue&       get_value,
+          ISetVisits&      set_visits,
+          ISetValue&       set_value,
+          IGetDispatches&  get_dispatches,
+          ISetDispatches&  set_dispatches,
+          IComputeBatchSize& compute_batch_size,
+          IWalker&         walker,
+          IRolloutChoose&  rollout,
+          INodeHandle      root,
+          IFloat           exploration_constant);
 
     IChoice choose(const IGetChoiceCount& get_choice_count,
                    const IGetChoiceAt&    get_choice_at);
@@ -88,14 +98,16 @@ private:
         IFloat      value_lump; // subtree reward sum accumulated; deposited to parent on pop
     };
 
-    IGetVisits&     get_visits_;
-    IGetValue&      get_value_;
-    ISetVisits&     set_visits_;
-    ISetValue&      set_value_;
-    IWalker&        walker_;
-    IRolloutChoose& rollout_;
-    IFloat          exploration_constant_;
-    size_t          grant_increment_interval_;
+    IGetVisits&       get_visits_;
+    IGetValue&        get_value_;
+    ISetVisits&       set_visits_;
+    ISetValue&        set_value_;
+    IGetDispatches&   get_dispatches_;
+    ISetDispatches&   set_dispatches_;
+    IComputeBatchSize& compute_batch_size_;
+    IWalker&          walker_;
+    IRolloutChoose&   rollout_;
+    IFloat            exploration_constant_;
 
     std::stack<frame> stack_;
     bool              in_rollout_;
@@ -109,55 +121,55 @@ private:
 // member function definitions
 // ---------------------------------------------------------------------------
 
-template<typename INodeHandle, typename IChoice, typename IFloat,
-         typename IGetVisits, typename IGetValue,
-         typename ISetVisits, typename ISetValue,
-         typename IWalker,
-         typename IGetChoiceCount, typename IGetChoiceAt,
-         typename IRolloutChoose>
-dbuct<INodeHandle, IChoice, IFloat,
-      IGetVisits, IGetValue, ISetVisits, ISetValue,
-      IWalker,
-      IGetChoiceCount, IGetChoiceAt,
-      IRolloutChoose>::dbuct(
-        IGetVisits&     get_visits,
-        IGetValue&      get_value,
-        ISetVisits&     set_visits,
-        ISetValue&      set_value,
-        IWalker&        walker,
-        IRolloutChoose& rollout,
-        INodeHandle     root,
-        size_t          grant_increment_interval,
-        IFloat          exploration_constant)
+// Abbreviations used in template heads below:
+//   INH  = INodeHandle      IC   = IChoice         IF   = IFloat
+//   IGVis= IGetVisits        IGVal= IGetValue
+//   ISVis= ISetVisits        ISVal= ISetValue
+//   IGD  = IGetDispatches   ISD  = ISetDispatches   IBS  = IComputeBatchSize
+//   IW   = IWalker          IGCC = IGetChoiceCount  IGCA = IGetChoiceAt
+//   IRC  = IRolloutChoose
+
+template<typename INH, typename IC, typename IF,
+         typename IGVis, typename IGVal, typename ISVis, typename ISVal,
+         typename IGD, typename ISD, typename IBS,
+         typename IW, typename IGCC, typename IGCA, typename IRC>
+dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IRC>::dbuct(
+        IGVis& get_visits,
+        IGVal& get_value,
+        ISVis& set_visits,
+        ISVal& set_value,
+        IGD&   get_dispatches,
+        ISD&   set_dispatches,
+        IBS&   compute_batch_size,
+        IW&    walker,
+        IRC&   rollout,
+        INH    root,
+        IF     exploration_constant)
     : get_visits_(get_visits)
     , get_value_(get_value)
     , set_visits_(set_visits)
     , set_value_(set_value)
+    , get_dispatches_(get_dispatches)
+    , set_dispatches_(set_dispatches)
+    , compute_batch_size_(compute_batch_size)
     , walker_(walker)
     , rollout_(rollout)
     , exploration_constant_(exploration_constant)
-    , grant_increment_interval_(grant_increment_interval)
     , in_rollout_(false)
 {
-    stack_.push({root, std::numeric_limits<size_t>::max(), 0, IFloat{0}});
+    stack_.push({root, std::numeric_limits<size_t>::max(), 0, IF{0}});
 }
 
-template<typename INodeHandle, typename IChoice, typename IFloat,
-         typename IGetVisits, typename IGetValue,
-         typename ISetVisits, typename ISetValue,
-         typename IWalker,
-         typename IGetChoiceCount, typename IGetChoiceAt,
-         typename IRolloutChoose>
-IChoice
-dbuct<INodeHandle, IChoice, IFloat,
-      IGetVisits, IGetValue, ISetVisits, ISetValue,
-      IWalker,
-      IGetChoiceCount, IGetChoiceAt,
-      IRolloutChoose>::choose(
-        const IGetChoiceCount& get_choice_count,
-        const IGetChoiceAt&    get_choice_at)
+template<typename INH, typename IC, typename IF,
+         typename IGVis, typename IGVal, typename ISVis, typename ISVal,
+         typename IGD, typename ISD, typename IBS,
+         typename IW, typename IGCC, typename IGCA, typename IRC>
+IC
+dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IRC>::choose(
+        const IGCC& get_choice_count,
+        const IGCA& get_choice_at)
 {
-    frame& current   = stack_.top();
+    frame& current        = stack_.top();
     size_t current_visits = get_visits_.get_visits(current.handle);
 
     if (!in_rollout_ && current_visits == 0)
@@ -167,28 +179,28 @@ dbuct<INodeHandle, IChoice, IFloat,
         return rollout_.rollout_choose(get_choice_count, get_choice_at);
 
     // UCB1 selection.
-    IFloat best_score = -std::numeric_limits<IFloat>::infinity();
+    IF     best_score = -std::numeric_limits<IF>::infinity();
     size_t best_i     = 0;
     size_t n          = get_choice_count.size();
 
     for (size_t i = 0; i < n; ++i)
     {
-        IChoice           candidate = get_choice_at.at(i);
-        const INodeHandle child     = walker_.walk(current.handle, candidate);
-        size_t            child_v   = get_visits_.get_visits(child);
+        IC        candidate = get_choice_at.at(i);
+        const INH child     = walker_.walk(current.handle, candidate);
+        size_t    child_v   = get_visits_.get_visits(child);
 
         if (child_v == 0)
         {
-            best_score = std::numeric_limits<IFloat>::infinity();
+            best_score = std::numeric_limits<IF>::infinity();
             best_i     = i;
             break;
         }
 
-        IFloat exploit = get_value_.get_value(child) / static_cast<IFloat>(child_v);
-        IFloat explore = std::sqrt(
-            std::log(static_cast<IFloat>(current_visits))
-            / static_cast<IFloat>(child_v));
-        IFloat score   = exploit + exploration_constant_ * explore;
+        IF exploit = get_value_.get_value(child) / static_cast<IF>(child_v);
+        IF explore = std::sqrt(
+            std::log(static_cast<IF>(current_visits))
+            / static_cast<IF>(child_v));
+        IF score   = exploit + exploration_constant_ * explore;
 
         if (score > best_score)
         {
@@ -197,97 +209,83 @@ dbuct<INodeHandle, IChoice, IFloat,
         }
     }
 
-    IChoice     chosen       = get_choice_at.at(best_i);
-    INodeHandle child_handle = walker_.walk(current.handle, chosen);
+    IC  chosen       = get_choice_at.at(best_i);
+    INH child_handle = walker_.walk(current.handle, chosen);
 
-    size_t remaining_budget = current.budget - current.visit_lump;
-    size_t grant_k = std::min(1 + current_visits / grant_increment_interval_,
-                              remaining_budget);
+    size_t current_dispatches = get_dispatches_.get_dispatches(current.handle);
+    size_t remaining_budget   = current.budget - current.visit_lump;
+    size_t grant_k = std::min(
+        compute_batch_size_.compute_batch_size(current_dispatches),
+        remaining_budget);
+    set_dispatches_.set_dispatches(current.handle, current_dispatches + 1);
 
-    stack_.push({child_handle, grant_k, 0, IFloat{0}});
+    stack_.push({child_handle, grant_k, 0, IF{0}});
 
     return chosen;
 }
 
-template<typename INodeHandle, typename IChoice, typename IFloat,
-         typename IGetVisits, typename IGetValue,
-         typename ISetVisits, typename ISetValue,
-         typename IWalker,
-         typename IGetChoiceCount, typename IGetChoiceAt,
-         typename IRolloutChoose>
+template<typename INH, typename IC, typename IF,
+         typename IGVis, typename IGVal, typename ISVis, typename ISVal,
+         typename IGD, typename ISD, typename IBS,
+         typename IW, typename IGCC, typename IGCA, typename IRC>
 size_t
-dbuct<INodeHandle, IChoice, IFloat,
-      IGetVisits, IGetValue, ISetVisits, ISetValue,
-      IWalker,
-      IGetChoiceCount, IGetChoiceAt,
-      IRolloutChoose>::terminate(IFloat reward)
+dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IRC>::terminate(
+        IF reward)
 {
-    in_rollout_ = false;
-
     add_visits(1);
     add_value(reward);
 
     size_t steps = 0;
+    if (!in_rollout_)
+    {
+        backstep();
+        ++steps;
+    }
     while (stack_.top().visit_lump >= stack_.top().budget)
     {
         backstep();
         ++steps;
     }
+    in_rollout_ = false;
     return steps;
 }
 
-template<typename INodeHandle, typename IChoice, typename IFloat,
-         typename IGetVisits, typename IGetValue,
-         typename ISetVisits, typename ISetValue,
-         typename IWalker,
-         typename IGetChoiceCount, typename IGetChoiceAt,
-         typename IRolloutChoose>
+template<typename INH, typename IC, typename IF,
+         typename IGVis, typename IGVal, typename ISVis, typename ISVal,
+         typename IGD, typename ISD, typename IBS,
+         typename IW, typename IGCC, typename IGCA, typename IRC>
 void
-dbuct<INodeHandle, IChoice, IFloat,
-      IGetVisits, IGetValue, ISetVisits, ISetValue,
-      IWalker,
-      IGetChoiceCount, IGetChoiceAt,
-      IRolloutChoose>::add_visits(size_t v)
+dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IRC>::add_visits(
+        size_t v)
 {
     frame& f = stack_.top();
     set_visits_.set_visits(f.handle, get_visits_.get_visits(f.handle) + v);
     f.visit_lump += v;
 }
 
-template<typename INodeHandle, typename IChoice, typename IFloat,
-         typename IGetVisits, typename IGetValue,
-         typename ISetVisits, typename ISetValue,
-         typename IWalker,
-         typename IGetChoiceCount, typename IGetChoiceAt,
-         typename IRolloutChoose>
+template<typename INH, typename IC, typename IF,
+         typename IGVis, typename IGVal, typename ISVis, typename ISVal,
+         typename IGD, typename ISD, typename IBS,
+         typename IW, typename IGCC, typename IGCA, typename IRC>
 void
-dbuct<INodeHandle, IChoice, IFloat,
-      IGetVisits, IGetValue, ISetVisits, ISetValue,
-      IWalker,
-      IGetChoiceCount, IGetChoiceAt,
-      IRolloutChoose>::add_value(IFloat l)
+dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IRC>::add_value(
+        IF l)
 {
     frame& f = stack_.top();
     set_value_.set_value(f.handle, get_value_.get_value(f.handle) + l);
     f.value_lump += l;
 }
 
-template<typename INodeHandle, typename IChoice, typename IFloat,
-         typename IGetVisits, typename IGetValue,
-         typename ISetVisits, typename ISetValue,
-         typename IWalker,
-         typename IGetChoiceCount, typename IGetChoiceAt,
-         typename IRolloutChoose>
+template<typename INH, typename IC, typename IF,
+         typename IGVis, typename IGVal, typename ISVis, typename ISVal,
+         typename IGD, typename ISD, typename IBS,
+         typename IW, typename IGCC, typename IGCA, typename IRC>
 void
-dbuct<INodeHandle, IChoice, IFloat,
-      IGetVisits, IGetValue, ISetVisits, ISetValue,
-      IWalker,
-      IGetChoiceCount, IGetChoiceAt,
-      IRolloutChoose>::backstep()
+dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IRC>::backstep()
 {
     const frame& current = stack_.top();
     size_t v = current.visit_lump;
-    IFloat l = current.value_lump;
+    IF     l = current.value_lump;
     stack_.pop();
     add_visits(v);
     add_value(l);

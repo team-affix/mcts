@@ -8,70 +8,91 @@
 namespace monte_carlo
 {
 
-// map_table<NodeHandle, IFloat, Map>
+// visits_table<NodeHandle, Map>
 //
-// Flat stats store keyed by NodeHandle. Replaces tree_node — there is no tree
-// node concept; this is simply a map from node identity to {visits, value}.
+// Per-node visit counter, keyed by NodeHandle.
 //
-// Satisfies all four stat accessor interfaces expected by sim:
-//   IGetVisits:  get_visits(const NodeHandle&) -> size_t   (0 if unseen — zero-default contract)
-//   IGetValue:   get_value(const NodeHandle&)  -> IFloat    (0 if unseen — zero-default contract)
-//   ISetVisits:  set_visits(const NodeHandle&, size_t)
-//   ISetValue:   set_value(const NodeHandle&, IFloat)
+// Satisfies:
+//   IGetVisits: get_visits(const NodeHandle&) -> size_t  (0 if unseen)
+//   ISetVisits: set_visits(const NodeHandle&, size_t) -> void
 //
-// Pass the same map_table object for all four sim constructor parameters.
+// Map parameter:
+//   visits_table<int, std::map>           — ordered
+//   visits_table<int, std::unordered_map> — hash map, requires std::hash<NodeHandle>
+
+template<
+    typename NodeHandle,
+    template<typename...> typename Map
+>
+struct visits_table
+{
+    size_t get_visits(const NodeHandle& h) const;
+    void   set_visits(const NodeHandle& h, size_t v);
+
+private:
+    Map<NodeHandle, size_t> visits_;
+};
+
+// value_table<NodeHandle, IFloat, Map>
 //
-// Map parameter — supply explicitly, no default:
-//   map_table<int, double, std::map>           — ordered, no hash required
-//   map_table<int, double, std::unordered_map> — hash map, requires std::hash<NodeHandle>
+// Per-node accumulated reward, keyed by NodeHandle.
+//
+// Satisfies:
+//   IGetValue: get_value(const NodeHandle&) -> IFloat  (IFloat{} if unseen)
+//   ISetValue: set_value(const NodeHandle&, IFloat) -> void
+//
+// Map parameter:
+//   value_table<int, double, std::map>           — ordered
+//   value_table<int, double, std::unordered_map> — hash map
 
 template<
     typename NodeHandle,
     typename IFloat,
     template<typename...> typename Map
 >
-struct map_table
+struct value_table
 {
-    size_t get_visits(const NodeHandle& node_handle) const;
-    IFloat get_value(const NodeHandle&  node_handle) const;
-    void   set_visits(const NodeHandle& node_handle, size_t v);
-    void   set_value(const NodeHandle&  node_handle, IFloat v);
+    IFloat get_value(const NodeHandle& h) const;
+    void   set_value(const NodeHandle& h, IFloat v);
 
 private:
-    struct node_stats { IFloat value{}; size_t visits{}; };
-    Map<NodeHandle, node_stats> nodes_;
+    Map<NodeHandle, IFloat> values_;
 };
 
 // ---------------------------------------------------------------------------
-// member function definitions
+// visits_table member function definitions
+// ---------------------------------------------------------------------------
+
+template<typename NodeHandle, template<typename...> typename Map>
+size_t visits_table<NodeHandle, Map>::get_visits(const NodeHandle& h) const
+{
+    auto it = visits_.find(h);
+    if (it == visits_.end()) return 0;
+    return it->second;
+}
+
+template<typename NodeHandle, template<typename...> typename Map>
+void visits_table<NodeHandle, Map>::set_visits(const NodeHandle& h, size_t v)
+{
+    visits_[h] = v;
+}
+
+// ---------------------------------------------------------------------------
+// value_table member function definitions
 // ---------------------------------------------------------------------------
 
 template<typename NodeHandle, typename IFloat, template<typename...> typename Map>
-size_t map_table<NodeHandle, IFloat, Map>::get_visits(const NodeHandle& node_handle) const
+IFloat value_table<NodeHandle, IFloat, Map>::get_value(const NodeHandle& h) const
 {
-    auto it = nodes_.find(node_handle);
-    if (it == nodes_.end()) return 0;
-    return it->second.visits;
+    auto it = values_.find(h);
+    if (it == values_.end()) return IFloat{};
+    return it->second;
 }
 
 template<typename NodeHandle, typename IFloat, template<typename...> typename Map>
-IFloat map_table<NodeHandle, IFloat, Map>::get_value(const NodeHandle& node_handle) const
+void value_table<NodeHandle, IFloat, Map>::set_value(const NodeHandle& h, IFloat v)
 {
-    auto it = nodes_.find(node_handle);
-    if (it == nodes_.end()) return IFloat{};
-    return it->second.value;
-}
-
-template<typename NodeHandle, typename IFloat, template<typename...> typename Map>
-void map_table<NodeHandle, IFloat, Map>::set_visits(const NodeHandle& node_handle, size_t v)
-{
-    nodes_[node_handle].visits = v;
-}
-
-template<typename NodeHandle, typename IFloat, template<typename...> typename Map>
-void map_table<NodeHandle, IFloat, Map>::set_value(const NodeHandle& node_handle, IFloat v)
-{
-    nodes_[node_handle].value = v;
+    values_[h] = v;
 }
 
 } // namespace monte_carlo
