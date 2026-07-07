@@ -461,9 +461,8 @@ protected:
                 ep_score += track[position];
             }
 
-            size_t steps = d.terminate(ep_score);
-            for (size_t s = 0; s < steps; ++s)
-                path.pop_back();
+            size_t idx = d.terminate(ep_score);
+            path.resize(idx + 1);
         }
     }
 
@@ -628,9 +627,8 @@ protected:
                     path.push_back(next);
                 if (next >= static_cast<int>(track.size()))
                 {
-                    size_t steps = d.terminate(reward);
-                    for (size_t s = 0; s < steps; ++s)
-                        path.pop_back();
+                    size_t idx = d.terminate(reward);
+                    path.resize(idx + 1);
                     break;
                 }
                 position = next;
@@ -841,9 +839,8 @@ protected:
                     path.push_back(next);
                 if (next >= static_cast<int>(track.size()))
                 {
-                    size_t steps = d.terminate(reward);
-                    for (size_t s = 0; s < steps; ++s)
-                        path.pop_back();
+                    size_t idx = d.terminate(reward);
+                    path.resize(idx + 1);
                     break;
                 }
                 position = next;
@@ -998,9 +995,9 @@ TEST_F(DbuctInRolloutTest, FlagTransitionsEpisodes1And2)
 // ---------------------------------------------------------------------------
 // DbuctBackstepCountTest
 //
-// Verifies the return value of terminate() equals the exact number of frames
-// popped from the internal stack, observable as the depth of the tree policy
-// traversal that just completed.
+// Verifies the return value of terminate() is the 0-based frame index of the
+// camping node that was backtracked to.  Root = index 0; a child camping one
+// level deep = index 1.  Callers can sync their path via path.resize(idx + 1).
 // ---------------------------------------------------------------------------
 class DbuctBackstepCountTest : public ::testing::Test
 {
@@ -1037,10 +1034,9 @@ protected:
                 path.push_back(next);
             if (next >= static_cast<int>(track.size()))
             {
-                size_t steps = d.terminate(reward);
-                for (size_t s = 0; s < steps; ++s)
-                    path.pop_back();
-                return steps;
+                size_t idx = d.terminate(reward);
+                path.resize(idx + 1);
+                return idx;
             }
             position = next;
             reward   = track[position];
@@ -1048,12 +1044,14 @@ protected:
     }
 };
 
-TEST_F(DbuctBackstepCountTest, GrowingDepthGIIMax)
+TEST_F(DbuctBackstepCountTest, ReturnsCorrectCampingFrameIndex)
 {
-    // track={1,1,1}: positions 0,1,2 in-bounds; 3=OOB.
-    // With GII=SIZE_MAX every child frame gets budget=1 and pops after one episode.
-    // The tree grows one level per episode: ep1→0 steps, ep2→1, ep3→2, ep4→3.
-    const std::vector<double> track = {1.0, 1.0, 1.0};
+    // Single-step game: root(-1) → pos0 → OOB.
+    // GII=2: dispatches D=0,1 give grant=1 (budget=1, always fully consumed → idx=0).
+    //        dispatch  D=2     gives grant=2 (budget=2 at pos0):
+    //          first  episode under that budget: pos0 not exhausted → camping at idx=1.
+    //          second episode under that budget: pos0 exhausted     → backstep to root, idx=0.
+    const std::vector<double> track = {1.0};
     const std::vector<jump_t> jumps = {1};
     std::mt19937              rng(42);
     visits_t                  visits;
@@ -1061,17 +1059,34 @@ TEST_F(DbuctBackstepCountTest, GrowingDepthGIIMax)
     rollout_t                 rollout(rng);
     position_walker           walker;
     dispatches_t              dispatches;
-    batch_t                   batch(std::numeric_limits<size_t>::max());
+    batch_t                   batch(2);   // GII = 2
 
     dbuct_t d(visits, value, visits, value, dispatches, dispatches, batch,
               walker, rollout, -1, 0.0);
 
     std::vector<int> path = {-1};
 
-    EXPECT_EQ(run_episode(d, track, jumps, path), 0u); // root rollout, no frames popped
-    EXPECT_EQ(run_episode(d, track, jumps, path), 1u); // UCB depth 1 → pos0 frame popped
-    EXPECT_EQ(run_episode(d, track, jumps, path), 2u); // UCB depth 2 → pos1 + pos0 popped
-    EXPECT_EQ(run_episode(d, track, jumps, path), 3u); // UCB depth 3 → pos2+pos1+pos0 popped
+    // ep1: root rollout (D not incremented). Returns idx=0, path={-1}.
+    EXPECT_EQ(run_episode(d, track, jumps, path), 0u);
+    EXPECT_EQ(path.back(), -1);
+
+    // ep2: root UCB dispatch D=0, grant=1. pos0 budget=1 exhausted → idx=0, path={-1}.
+    EXPECT_EQ(run_episode(d, track, jumps, path), 0u);
+    EXPECT_EQ(path.back(), -1);
+
+    // ep3: root UCB dispatch D=1, grant=1. Same → idx=0, path={-1}.
+    EXPECT_EQ(run_episode(d, track, jumps, path), 0u);
+    EXPECT_EQ(path.back(), -1);
+
+    // ep4: root UCB dispatch D=2, grant=2. pos0 gets budget=2; after 1 sim visit_lump=1<2
+    //      → camping at pos0 (idx=1), path={-1, 0}.
+    EXPECT_EQ(run_episode(d, track, jumps, path), 1u);
+    EXPECT_EQ(path.back(), 0);
+
+    // ep5: continuing from pos0 (path={-1,0}). pos0's second sim exhausts budget=2
+    //      → backstep to root (idx=0), path={-1}.
+    EXPECT_EQ(run_episode(d, track, jumps, path), 0u);
+    EXPECT_EQ(path.back(), -1);
 }
 
 // ---------------------------------------------------------------------------
@@ -1118,9 +1133,8 @@ protected:
                 path.push_back(next);
             if (next >= static_cast<int>(track.size()))
             {
-                size_t steps = d.terminate(reward);
-                for (size_t s = 0; s < steps; ++s)
-                    path.pop_back();
+                size_t idx = d.terminate(reward);
+                path.resize(idx + 1);
                 return;
             }
             position = next;
@@ -1266,9 +1280,8 @@ protected:
                 path.push_back(next);
             if (next >= static_cast<int>(track.size()))
             {
-                size_t steps = d.terminate(reward);
-                for (size_t s = 0; s < steps; ++s)
-                    path.pop_back();
+                size_t idx = d.terminate(reward);
+                path.resize(idx + 1);
                 return reward;
             }
             position = next;

@@ -84,6 +84,8 @@ struct dbuct
     IChoice choose(const IGetChoiceCount& get_choice_count,
                    const IGetChoiceAt&    get_choice_at);
 
+    // Returns the 0-based frame index that was backtracked TO (root = 0).
+    // The caller can sync their own path with  path.resize(idx + 1).
     size_t terminate(IFloat reward);
 
     bool in_rollout() const { return in_rollout_; }
@@ -235,15 +237,11 @@ dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IR
     add_visits(1);
     add_value(reward);
 
-    size_t steps = 0;
     while (stack_.top().visit_lump >= stack_.top().budget)
-    {
         backstep();
-        ++steps;
-    }
-    
+
     in_rollout_ = false;
-    return steps;
+    return stack_.size() - 1;
 }
 
 template<typename INH, typename IC, typename IF,
