@@ -86,7 +86,14 @@ struct dbuct
 
     // Returns the frame stack size after backtracking.
     // The caller can sync their own path with  path.resize(stack_size).
-    size_t terminate(IFloat reward);
+    //
+    // max_return_depth (>= 1): if the stack is still deeper than this after
+    //   budget-driven backtracking, additional forced backsteps are performed
+    //   until stack_.size() <= max_return_depth.  Cascade budget checks run
+    //   after each forced pop, so the merged condition is correct.
+    //   Passing SIZE_MAX (default) disables forced backtracking entirely.
+    //   Passing 1 forces a full return to root.  Passing 0 is undefined.
+    size_t terminate(IFloat reward, size_t max_return_depth = SIZE_MAX);
 
     bool in_rollout() const { return in_rollout_; }
 
@@ -232,12 +239,13 @@ template<typename INH, typename IC, typename IF,
          typename IW, typename IGCC, typename IGCA, typename IRC>
 size_t
 dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IRC>::terminate(
-        IF reward)
+        IF reward, size_t max_return_depth)
 {
     add_visits(1);
     add_value(reward);
 
-    while (stack_.top().visit_lump >= stack_.top().budget)
+    while (stack_.top().visit_lump >= stack_.top().budget ||
+           stack_.size() > max_return_depth)
         backstep();
 
     in_rollout_ = false;

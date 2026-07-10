@@ -1021,7 +1021,8 @@ protected:
     size_t run_episode(dbuct_t&                   d,
                        const std::vector<double>& track,
                        const std::vector<jump_t>& jumps,
-                       std::vector<int>&          path)
+                       std::vector<int>&          path,
+                       size_t                     max_return_depth = SIZE_MAX)
     {
         int    position = path.back();
         double reward   = 0.0;
@@ -1034,7 +1035,7 @@ protected:
                 path.push_back(next);
             if (next >= static_cast<int>(track.size()))
             {
-                size_t idx = d.terminate(reward);
+                size_t idx = d.terminate(reward, max_return_depth);
                 path.resize(idx);
                 return idx;
             }
@@ -1087,6 +1088,45 @@ TEST_F(DbuctBackstepCountTest, ReturnsCorrectCampingFrameIndex)
     //      → backstep to root, stack_size=1, path={-1}.
     EXPECT_EQ(run_episode(d, track, jumps, path), 1u);
     EXPECT_EQ(path.back(), -1);
+}
+
+TEST_F(DbuctBackstepCountTest, ForcedBacktrackToRootOverridesCamping)
+{
+    // Same GII=2 setup as above.  Episode 4 would normally camp at pos0
+    // (stack_size=2).  Passing max_return_depth=1 forces it all the way back
+    // to root, and the pos0 lump is rolled into root's lump as usual.
+    const std::vector<double> track = {1.0};
+    const std::vector<jump_t> jumps = {1};
+    std::mt19937              rng(42);
+    visits_t                  visits;
+    value_t                   value;
+    rollout_t                 rollout(rng);
+    position_walker           walker;
+    dispatches_t              dispatches;
+    batch_t                   batch(2);   // GII = 2
+
+    dbuct_t d(visits, value, visits, value, dispatches, dispatches, batch,
+              walker, rollout, -1, 0.0);
+
+    std::vector<int> path = {-1};
+
+    // Advance through eps 1-3 (budget=1 periods) without forced backtrack.
+    run_episode(d, track, jumps, path);
+    run_episode(d, track, jumps, path);
+    run_episode(d, track, jumps, path);
+    ASSERT_EQ(path.back(), -1);
+
+    const size_t root_visits_before = visits.get_visits(-1);
+
+    // ep4: grant=2, pos0 would camp at stack_size=2 — but forced max_return_depth=1
+    // overrides and drives all the way back to root.
+    size_t result = run_episode(d, track, jumps, path, /*max_return_depth=*/1);
+    EXPECT_EQ(result, 1u);
+    EXPECT_EQ(path.back(), -1);
+
+    // Verify that pos0's partial lump (1 visit) was force-rolled into root even
+    // though pos0's budget was not naturally exhausted.
+    EXPECT_EQ(visits.get_visits(-1) - root_visits_before, 1u);
 }
 
 // ---------------------------------------------------------------------------
