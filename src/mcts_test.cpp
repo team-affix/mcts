@@ -462,7 +462,7 @@ protected:
             }
 
             size_t idx = d.terminate(ep_score);
-            path.resize(idx + 1);
+            path.resize(idx);
         }
     }
 
@@ -628,7 +628,7 @@ protected:
                 if (next >= static_cast<int>(track.size()))
                 {
                     size_t idx = d.terminate(reward);
-                    path.resize(idx + 1);
+                    path.resize(idx);
                     break;
                 }
                 position = next;
@@ -840,7 +840,7 @@ protected:
                 if (next >= static_cast<int>(track.size()))
                 {
                     size_t idx = d.terminate(reward);
-                    path.resize(idx + 1);
+                    path.resize(idx);
                     break;
                 }
                 position = next;
@@ -995,9 +995,9 @@ TEST_F(DbuctInRolloutTest, FlagTransitionsEpisodes1And2)
 // ---------------------------------------------------------------------------
 // DbuctBackstepCountTest
 //
-// Verifies the return value of terminate() is the 0-based frame index of the
-// camping node that was backtracked to.  Root = index 0; a child camping one
-// level deep = index 1.  Callers can sync their path via path.resize(idx + 1).
+// Verifies the return value of terminate() is the frame stack size after
+// backtracking.  Root only = 1; a child camping one level deep = 2.
+// Callers can sync their path via path.resize(stack_size).
 // ---------------------------------------------------------------------------
 class DbuctBackstepCountTest : public ::testing::Test
 {
@@ -1035,7 +1035,7 @@ protected:
             if (next >= static_cast<int>(track.size()))
             {
                 size_t idx = d.terminate(reward);
-                path.resize(idx + 1);
+                path.resize(idx);
                 return idx;
             }
             position = next;
@@ -1049,8 +1049,8 @@ TEST_F(DbuctBackstepCountTest, ReturnsCorrectCampingFrameIndex)
     // Single-step game: root(-1) → pos0 → OOB.
     // GII=2: dispatches D=0,1 give grant=1 (budget=1, always fully consumed → idx=0).
     //        dispatch  D=2     gives grant=2 (budget=2 at pos0):
-    //          first  episode under that budget: pos0 not exhausted → camping at idx=1.
-    //          second episode under that budget: pos0 exhausted     → backstep to root, idx=0.
+    //          first  episode under that budget: pos0 not exhausted → camping, stack_size=2.
+    //          second episode under that budget: pos0 exhausted     → backstep to root, stack_size=1.
     const std::vector<double> track = {1.0};
     const std::vector<jump_t> jumps = {1};
     std::mt19937              rng(42);
@@ -1066,26 +1066,26 @@ TEST_F(DbuctBackstepCountTest, ReturnsCorrectCampingFrameIndex)
 
     std::vector<int> path = {-1};
 
-    // ep1: root rollout (D not incremented). Returns idx=0, path={-1}.
-    EXPECT_EQ(run_episode(d, track, jumps, path), 0u);
+    // ep1: root rollout (D not incremented). stack_size=1, path={-1}.
+    EXPECT_EQ(run_episode(d, track, jumps, path), 1u);
     EXPECT_EQ(path.back(), -1);
 
-    // ep2: root UCB dispatch D=0, grant=1. pos0 budget=1 exhausted → idx=0, path={-1}.
-    EXPECT_EQ(run_episode(d, track, jumps, path), 0u);
+    // ep2: root UCB dispatch D=0, grant=1. pos0 budget=1 exhausted → stack_size=1, path={-1}.
+    EXPECT_EQ(run_episode(d, track, jumps, path), 1u);
     EXPECT_EQ(path.back(), -1);
 
-    // ep3: root UCB dispatch D=1, grant=1. Same → idx=0, path={-1}.
-    EXPECT_EQ(run_episode(d, track, jumps, path), 0u);
+    // ep3: root UCB dispatch D=1, grant=1. Same → stack_size=1, path={-1}.
+    EXPECT_EQ(run_episode(d, track, jumps, path), 1u);
     EXPECT_EQ(path.back(), -1);
 
     // ep4: root UCB dispatch D=2, grant=2. pos0 gets budget=2; after 1 sim visit_lump=1<2
-    //      → camping at pos0 (idx=1), path={-1, 0}.
-    EXPECT_EQ(run_episode(d, track, jumps, path), 1u);
+    //      → camping at pos0, stack_size=2, path={-1, 0}.
+    EXPECT_EQ(run_episode(d, track, jumps, path), 2u);
     EXPECT_EQ(path.back(), 0);
 
     // ep5: continuing from pos0 (path={-1,0}). pos0's second sim exhausts budget=2
-    //      → backstep to root (idx=0), path={-1}.
-    EXPECT_EQ(run_episode(d, track, jumps, path), 0u);
+    //      → backstep to root, stack_size=1, path={-1}.
+    EXPECT_EQ(run_episode(d, track, jumps, path), 1u);
     EXPECT_EQ(path.back(), -1);
 }
 
@@ -1134,7 +1134,7 @@ protected:
             if (next >= static_cast<int>(track.size()))
             {
                 size_t idx = d.terminate(reward);
-                path.resize(idx + 1);
+                path.resize(idx);
                 return;
             }
             position = next;
@@ -1281,7 +1281,7 @@ protected:
             if (next >= static_cast<int>(track.size()))
             {
                 size_t idx = d.terminate(reward);
-                path.resize(idx + 1);
+                path.resize(idx);
                 return reward;
             }
             position = next;

@@ -84,8 +84,8 @@ struct dbuct
     IChoice choose(const IGetChoiceCount& get_choice_count,
                    const IGetChoiceAt&    get_choice_at);
 
-    // Returns the 0-based frame index that was backtracked TO (root = 0).
-    // The caller can sync their own path with  path.resize(idx + 1).
+    // Returns the frame stack size after backtracking.
+    // The caller can sync their own path with  path.resize(stack_size).
     size_t terminate(IFloat reward);
 
     bool in_rollout() const { return in_rollout_; }
@@ -241,7 +241,7 @@ dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IR
         backstep();
 
     in_rollout_ = false;
-    return stack_.size() - 1;
+    return stack_.size();
 }
 
 template<typename INH, typename IC, typename IF,
