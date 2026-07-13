@@ -98,6 +98,7 @@ struct dbuct
     void backstep();
 
     size_t depth() const { return stack_.size(); }
+    size_t budget() const { return stack_.top().budget; }
     bool   in_rollout() const { return in_rollout_; }
 
 private:

@@ -1418,3 +1418,97 @@ TEST_F(DbuctCampingLumpTest, LumpInvariantHoldsAcrossGrantPeriods)
             << " sum_rewards=" << r.sum_rewards << ")";
     }
 }
+
+// ---------------------------------------------------------------------------
+// DbuctBudgetInvariantTest
+//
+// After a long warmup run, drives episodes that backstep all the way to root
+// after each terminate(), asserting budget(parent(n)) >= budget(n) at every
+// pop along the climb.
+// ---------------------------------------------------------------------------
+class DbuctBudgetInvariantTest : public ::testing::Test
+{
+protected:
+    using visits_t      = monte_carlo::visits_table<int, std::unordered_map>;
+    using value_t       = monte_carlo::value_table<int, double, std::unordered_map>;
+    using dispatches_t  = monte_carlo::dispatches_table<int, std::unordered_map>;
+    using batch_t       = monte_carlo::linear_batch_increment;
+    using rollout_t     = monte_carlo::random_rollout<
+                             jump_t, std::mt19937,
+                             std::vector<jump_t>, std::vector<jump_t>>;
+    using dbuct_t       = monte_carlo::dbuct<
+                             int, jump_t, double,
+                             visits_t, value_t, visits_t, value_t,
+                             dispatches_t, dispatches_t,
+                             batch_t,
+                             position_walker,
+                             std::vector<jump_t>, std::vector<jump_t>,
+                             rollout_t>;
+
+    void run_episode(dbuct_t&                   d,
+                     const std::vector<double>& track,
+                     const std::vector<jump_t>& jumps,
+                     std::vector<int>&          path)
+    {
+        int    position = path.back();
+        double reward   = 0.0;
+
+        while (true)
+        {
+            jump_t chosen = d.choose(jumps, jumps);
+            int    next   = position + chosen;
+            if (!d.in_rollout())
+                path.push_back(next);
+            if (next >= static_cast<int>(track.size()))
+            {
+                d.terminate(reward);
+                path.resize(d.depth());
+                return;
+            }
+            position = next;
+            reward   = track[position];
+        }
+    }
+
+    void backstep_to_root_asserting_invariant(dbuct_t& d, std::vector<int>& path)
+    {
+        while (d.depth() > 1)
+        {
+            const size_t child_budget = d.budget();
+            d.backstep();
+            EXPECT_GE(d.budget(), child_budget)
+                << "budget(parent) >= budget(child) violated at depth=" << d.depth();
+            path.resize(d.depth());
+        }
+    }
+};
+
+TEST_F(DbuctBudgetInvariantTest, ParentBudgetGteChildBudgetAcrossLongRun)
+{
+    const std::vector<double> track = {3.0, -1.0, 4.0, -2.0, 5.0, 1.0, 2.0, -3.0, 7.0, 0.5};
+    const std::vector<jump_t> jumps = {1, 2, 3};
+    const size_t              GII   = 3;
+    std::mt19937              rng(77);
+    visits_t                  visits;
+    value_t                   value;
+    dispatches_t              dispatches;
+    batch_t                   batch(GII);
+    rollout_t                 rollout(rng);
+    position_walker           walker;
+
+    dbuct_t d(visits, value, visits, value, dispatches, dispatches, batch,
+              walker, rollout, -1, 1.5);
+
+    std::vector<int> path = {-1};
+
+    for (int i = 0; i < 10000; ++i)
+        run_episode(d, track, jumps, path);
+
+    for (int i = 0; i < 1000; ++i)
+    {
+        run_episode(d, track, jumps, path);
+        backstep_to_root_asserting_invariant(d, path);
+        EXPECT_EQ(d.depth(), 1u);
+        EXPECT_EQ(path, std::vector<int>({-1}));
+    }
+}
