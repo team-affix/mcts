@@ -461,8 +461,8 @@ protected:
                 ep_score += track[position];
             }
 
-            size_t idx = d.terminate(ep_score);
-            path.resize(idx);
+            d.terminate(ep_score);
+            path.resize(d.depth());
         }
     }
 
@@ -627,8 +627,8 @@ protected:
                     path.push_back(next);
                 if (next >= static_cast<int>(track.size()))
                 {
-                    size_t idx = d.terminate(reward);
-                    path.resize(idx);
+                    d.terminate(reward);
+                    path.resize(d.depth());
                     break;
                 }
                 position = next;
@@ -839,8 +839,8 @@ protected:
                     path.push_back(next);
                 if (next >= static_cast<int>(track.size()))
                 {
-                    size_t idx = d.terminate(reward);
-                    path.resize(idx);
+                    d.terminate(reward);
+                    path.resize(d.depth());
                     break;
                 }
                 position = next;
@@ -993,13 +993,13 @@ TEST_F(DbuctInRolloutTest, FlagTransitionsEpisodes1And2)
 }
 
 // ---------------------------------------------------------------------------
-// DbuctBackstepCountTest
+// DbuctDepthTest
 //
-// Verifies the return value of terminate() is the frame stack size after
-// backtracking.  Root only = 1; a child camping one level deep = 2.
-// Callers can sync their path via path.resize(stack_size).
+// Verifies depth() after terminate() reflects budget-driven backtracking.
+// Root only = 1; a child camping one level deep = 2.
+// Callers sync their path via path.resize(depth()).
 // ---------------------------------------------------------------------------
-class DbuctBackstepCountTest : public ::testing::Test
+class DbuctDepthTest : public ::testing::Test
 {
 protected:
     using visits_t      = monte_carlo::visits_table<int, std::unordered_map>;
@@ -1018,11 +1018,10 @@ protected:
                              std::vector<jump_t>, std::vector<jump_t>,
                              rollout_t>;
 
-    size_t run_episode(dbuct_t&                   d,
-                       const std::vector<double>& track,
-                       const std::vector<jump_t>& jumps,
-                       std::vector<int>&          path,
-                       size_t                     max_return_depth = SIZE_MAX)
+    void run_episode(dbuct_t&                   d,
+                     const std::vector<double>& track,
+                     const std::vector<jump_t>& jumps,
+                     std::vector<int>&          path)
     {
         int    position = path.back();
         double reward   = 0.0;
@@ -1035,9 +1034,9 @@ protected:
                 path.push_back(next);
             if (next >= static_cast<int>(track.size()))
             {
-                size_t idx = d.terminate(reward, max_return_depth);
-                path.resize(idx);
-                return idx;
+                d.terminate(reward);
+                path.resize(d.depth());
+                return;
             }
             position = next;
             reward   = track[position];
@@ -1045,13 +1044,13 @@ protected:
     }
 };
 
-TEST_F(DbuctBackstepCountTest, ReturnsCorrectCampingFrameIndex)
+TEST_F(DbuctDepthTest, ReturnsCorrectCampingFrameIndex)
 {
     // Single-step game: root(-1) → pos0 → OOB.
-    // GII=2: dispatches D=0,1 give grant=1 (budget=1, always fully consumed → idx=0).
+    // GII=2: dispatches D=0,1 give grant=1 (budget=1, always fully consumed → depth=1).
     //        dispatch  D=2     gives grant=2 (budget=2 at pos0):
-    //          first  episode under that budget: pos0 not exhausted → camping, stack_size=2.
-    //          second episode under that budget: pos0 exhausted     → backstep to root, stack_size=1.
+    //          first  episode under that budget: pos0 not exhausted → camping, depth=2.
+    //          second episode under that budget: pos0 exhausted     → backstep to root, depth=1.
     const std::vector<double> track = {1.0};
     const std::vector<jump_t> jumps = {1};
     std::mt19937              rng(42);
@@ -1067,34 +1066,39 @@ TEST_F(DbuctBackstepCountTest, ReturnsCorrectCampingFrameIndex)
 
     std::vector<int> path = {-1};
 
-    // ep1: root rollout (D not incremented). stack_size=1, path={-1}.
-    EXPECT_EQ(run_episode(d, track, jumps, path), 1u);
+    // ep1: root rollout (D not incremented). depth=1, path={-1}.
+    run_episode(d, track, jumps, path);
+    EXPECT_EQ(d.depth(), 1u);
     EXPECT_EQ(path.back(), -1);
 
-    // ep2: root UCB dispatch D=0, grant=1. pos0 budget=1 exhausted → stack_size=1, path={-1}.
-    EXPECT_EQ(run_episode(d, track, jumps, path), 1u);
+    // ep2: root UCB dispatch D=0, grant=1. pos0 budget=1 exhausted → depth=1, path={-1}.
+    run_episode(d, track, jumps, path);
+    EXPECT_EQ(d.depth(), 1u);
     EXPECT_EQ(path.back(), -1);
 
-    // ep3: root UCB dispatch D=1, grant=1. Same → stack_size=1, path={-1}.
-    EXPECT_EQ(run_episode(d, track, jumps, path), 1u);
+    // ep3: root UCB dispatch D=1, grant=1. Same → depth=1, path={-1}.
+    run_episode(d, track, jumps, path);
+    EXPECT_EQ(d.depth(), 1u);
     EXPECT_EQ(path.back(), -1);
 
     // ep4: root UCB dispatch D=2, grant=2. pos0 gets budget=2; after 1 sim visit_lump=1<2
-    //      → camping at pos0, stack_size=2, path={-1, 0}.
-    EXPECT_EQ(run_episode(d, track, jumps, path), 2u);
+    //      → camping at pos0, depth=2, path={-1, 0}.
+    run_episode(d, track, jumps, path);
+    EXPECT_EQ(d.depth(), 2u);
     EXPECT_EQ(path.back(), 0);
 
     // ep5: continuing from pos0 (path={-1,0}). pos0's second sim exhausts budget=2
-    //      → backstep to root, stack_size=1, path={-1}.
-    EXPECT_EQ(run_episode(d, track, jumps, path), 1u);
+    //      → backstep to root, depth=1, path={-1}.
+    run_episode(d, track, jumps, path);
+    EXPECT_EQ(d.depth(), 1u);
     EXPECT_EQ(path.back(), -1);
 }
 
-TEST_F(DbuctBackstepCountTest, ForcedBacktrackToRootOverridesCamping)
+TEST_F(DbuctDepthTest, ManualBackstepToRootOverridesCamping)
 {
     // Same GII=2 setup as above.  Episode 4 would normally camp at pos0
-    // (stack_size=2).  Passing max_return_depth=1 forces it all the way back
-    // to root, and the pos0 lump is rolled into root's lump as usual.
+    // (depth=2).  Caller invokes backstep() after terminate() to climb to root,
+    // and the pos0 lump is rolled into root's lump as usual.
     const std::vector<double> track = {1.0};
     const std::vector<jump_t> jumps = {1};
     std::mt19937              rng(42);
@@ -1110,7 +1114,7 @@ TEST_F(DbuctBackstepCountTest, ForcedBacktrackToRootOverridesCamping)
 
     std::vector<int> path = {-1};
 
-    // Advance through eps 1-3 (budget=1 periods) without forced backtrack.
+    // Advance through eps 1-3 (budget=1 periods).
     run_episode(d, track, jumps, path);
     run_episode(d, track, jumps, path);
     run_episode(d, track, jumps, path);
@@ -1118,13 +1122,34 @@ TEST_F(DbuctBackstepCountTest, ForcedBacktrackToRootOverridesCamping)
 
     const size_t root_visits_before = visits.get_visits(-1);
 
-    // ep4: grant=2, pos0 would camp at stack_size=2 — but forced max_return_depth=1
-    // overrides and drives all the way back to root.
-    size_t result = run_episode(d, track, jumps, path, /*max_return_depth=*/1);
-    EXPECT_EQ(result, 1u);
+    // ep4: grant=2, pos0 would camp at depth=2 — caller backsteps to root.
+    {
+        int    position = path.back();
+        double reward   = 0.0;
+
+        while (true)
+        {
+            jump_t chosen = d.choose(jumps, jumps);
+            int    next   = position + chosen;
+            if (!d.in_rollout())
+                path.push_back(next);
+            if (next >= static_cast<int>(track.size()))
+            {
+                d.terminate(reward);
+                while (d.depth() > 1)
+                    d.backstep();
+                path.resize(d.depth());
+                break;
+            }
+            position = next;
+            reward   = track[position];
+        }
+    }
+
+    EXPECT_EQ(d.depth(), 1u);
     EXPECT_EQ(path.back(), -1);
 
-    // Verify that pos0's partial lump (1 visit) was force-rolled into root even
+    // Verify that pos0's partial lump (1 visit) was rolled into root even
     // though pos0's budget was not naturally exhausted.
     EXPECT_EQ(visits.get_visits(-1) - root_visits_before, 1u);
 }
@@ -1173,8 +1198,8 @@ protected:
                 path.push_back(next);
             if (next >= static_cast<int>(track.size()))
             {
-                size_t idx = d.terminate(reward);
-                path.resize(idx);
+                d.terminate(reward);
+                path.resize(d.depth());
                 return;
             }
             position = next;
@@ -1320,8 +1345,8 @@ protected:
                 path.push_back(next);
             if (next >= static_cast<int>(track.size()))
             {
-                size_t idx = d.terminate(reward);
-                path.resize(idx);
+                d.terminate(reward);
+                path.resize(d.depth());
                 return reward;
             }
             position = next;
@@ -1393,3 +1418,100 @@ TEST_F(DbuctCampingLumpTest, LumpInvariantHoldsAcrossGrantPeriods)
             << " sum_rewards=" << r.sum_rewards << ")";
     }
 }
+
+// ---------------------------------------------------------------------------
+// DbuctBudgetInvariantTest
+//
+// DISABLED: verifying budget(parent(n)) >= budget(n) during backstep()
+// requires reading each frame's grant budget, which is intentionally not
+// exposed on the public API. Without a budget accessor (or a test-only hook),
+// the invariant cannot be asserted from caller code.
+// ---------------------------------------------------------------------------
+#if 0
+class DbuctBudgetInvariantTest : public ::testing::Test
+{
+protected:
+    using visits_t      = monte_carlo::visits_table<int, std::unordered_map>;
+    using value_t       = monte_carlo::value_table<int, double, std::unordered_map>;
+    using dispatches_t  = monte_carlo::dispatches_table<int, std::unordered_map>;
+    using batch_t       = monte_carlo::linear_batch_increment;
+    using rollout_t     = monte_carlo::random_rollout<
+                             jump_t, std::mt19937,
+                             std::vector<jump_t>, std::vector<jump_t>>;
+    using dbuct_t       = monte_carlo::dbuct<
+                             int, jump_t, double,
+                             visits_t, value_t, visits_t, value_t,
+                             dispatches_t, dispatches_t,
+                             batch_t,
+                             position_walker,
+                             std::vector<jump_t>, std::vector<jump_t>,
+                             rollout_t>;
+
+    void run_episode(dbuct_t&                   d,
+                     const std::vector<double>& track,
+                     const std::vector<jump_t>& jumps,
+                     std::vector<int>&          path)
+    {
+        int    position = path.back();
+        double reward   = 0.0;
+
+        while (true)
+        {
+            jump_t chosen = d.choose(jumps, jumps);
+            int    next   = position + chosen;
+            if (!d.in_rollout())
+                path.push_back(next);
+            if (next >= static_cast<int>(track.size()))
+            {
+                d.terminate(reward);
+                path.resize(d.depth());
+                return;
+            }
+            position = next;
+            reward   = track[position];
+        }
+    }
+
+    void backstep_to_root_asserting_invariant(dbuct_t& d, std::vector<int>& path)
+    {
+        while (d.depth() > 1)
+        {
+            const size_t child_budget = d.budget();
+            d.backstep();
+            EXPECT_GE(d.budget(), child_budget)
+                << "budget(parent) >= budget(child) violated at depth=" << d.depth();
+            path.resize(d.depth());
+        }
+    }
+};
+
+TEST_F(DbuctBudgetInvariantTest, ParentBudgetGteChildBudgetAcrossLongRun)
+{
+    const std::vector<double> track = {3.0, -1.0, 4.0, -2.0, 5.0, 1.0, 2.0, -3.0, 7.0, 0.5};
+    const std::vector<jump_t> jumps = {1, 2, 3};
+    const size_t              GII   = 3;
+    std::mt19937              rng(77);
+    visits_t                  visits;
+    value_t                   value;
+    dispatches_t              dispatches;
+    batch_t                   batch(GII);
+    rollout_t                 rollout(rng);
+    position_walker           walker;
+
+    dbuct_t d(visits, value, visits, value, dispatches, dispatches, batch,
+              walker, rollout, -1, 1.5);
+
+    std::vector<int> path = {-1};
+
+    for (int i = 0; i < 10000; ++i)
+        run_episode(d, track, jumps, path);
+
+    for (int i = 0; i < 1000; ++i)
+    {
+        run_episode(d, track, jumps, path);
+        backstep_to_root_asserting_invariant(d, path);
+        EXPECT_EQ(d.depth(), 1u);
+        EXPECT_EQ(path, std::vector<int>({-1}));
+    }
+}
+#endif

@@ -35,8 +35,13 @@ namespace monte_carlo
 //   - Create one dbuct for the entire training run (not one per episode).
 //   - Maintain your own path stack of visited nodes alongside the episode.
 //   - Drive each episode: call choose() per step until terminal, then call
-//     terminate(reward) which returns the number of backsteps taken.
-//   - Pop that many entries off your path stack to find the resume node.
+//     terminate(reward).  Sync your path via path.resize(depth()).
+//   - Optionally call backstep() after terminate() to climb toward root.
+//     Every ancestor of the resume node has nonzero budget remaining, so
+//     backstep() is always safe before the next sim.
+//
+// Budget invariant: for each node n, budget(parent(n)) >= budget(n).
+// terminate() backs up until the first frame with nonzero remaining budget.
 //
 // Zero-default contract: IGetVisits, IGetValue, IGetDispatches must return 0
 //   for unseen handles.
@@ -84,19 +89,16 @@ struct dbuct
     IChoice choose(const IGetChoiceCount& get_choice_count,
                    const IGetChoiceAt&    get_choice_at);
 
-    // Returns the frame stack size after backtracking.
-    // The caller can sync their own path with  path.resize(stack_size).
-    //
-    // max_return_depth (>= 1): if the stack is still deeper than this after
-    //   budget-driven backtracking, additional forced backsteps are performed
-    //   until stack_.size() <= max_return_depth.  Cascade budget checks run
-    //   after each forced pop, so the merged condition is correct.
-    //   Passing SIZE_MAX (default) disables forced backtracking entirely.
-    //   Passing 1 forces a full return to root.  Passing 0 is undefined.
-    size_t terminate(IFloat reward, size_t max_return_depth = SIZE_MAX);
+    // Backpropagate the terminal reward, then backstep until the top frame
+    // has nonzero remaining budget (visit_lump < budget).
+    void terminate(IFloat reward);
 
-    bool in_rollout() const { return in_rollout_; }
+    // Pop one frame and deposit its lump into the parent.  Caller-controlled
+    // backtracking after terminate(); safe while depth() > 0.
+    void backstep();
 
+    size_t depth() const { return stack_.size(); }
+    bool   in_rollout() const { return in_rollout_; }
 
 private:
     struct frame
@@ -123,7 +125,6 @@ private:
 
     void add_visits(size_t v);
     void add_value(IFloat l);
-    void backstep();
 };
 
 // ---------------------------------------------------------------------------
@@ -237,19 +238,17 @@ template<typename INH, typename IC, typename IF,
          typename IGVis, typename IGVal, typename ISVis, typename ISVal,
          typename IGD, typename ISD, typename IBS,
          typename IW, typename IGCC, typename IGCA, typename IRC>
-size_t
+void
 dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IRC>::terminate(
-        IF reward, size_t max_return_depth)
+        IF reward)
 {
     add_visits(1);
     add_value(reward);
 
-    while (stack_.top().visit_lump >= stack_.top().budget ||
-           stack_.size() > max_return_depth)
+    while (stack_.top().visit_lump >= stack_.top().budget)
         backstep();
 
     in_rollout_ = false;
-    return stack_.size();
 }
 
 template<typename INH, typename IC, typename IF,
