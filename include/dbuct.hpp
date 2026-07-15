@@ -22,26 +22,28 @@ template<
     typename IWalker,
     typename IGetChoiceCount,
     typename IGetChoiceAt,
-    typename IRolloutChoose
+    typename IRolloutChoose,
+    typename IGetValueDelta
 >
 struct dbuct
 {
-    dbuct(IGetVisits&      get_visits,
-          IGetValue&       get_value,
-          ISetVisits&      set_visits,
-          ISetValue&       set_value,
-          IGetDispatches&  get_dispatches,
-          ISetDispatches&  set_dispatches,
+    dbuct(IGetVisits&        get_visits,
+          IGetValue&         get_value,
+          ISetVisits&        set_visits,
+          ISetValue&         set_value,
+          IGetDispatches&    get_dispatches,
+          ISetDispatches&    set_dispatches,
           IComputeBatchSize& compute_batch_size,
-          IWalker&         walker,
-          IRolloutChoose&  rollout,
-          INodeHandle      root,
-          IFloat           exploration_constant);
+          IWalker&           walker,
+          IRolloutChoose&    rollout,
+          IGetValueDelta&    value_delta,
+          INodeHandle        root,
+          IFloat             exploration_constant);
 
     IChoice choose(const IGetChoiceCount& get_choice_count,
                    const IGetChoiceAt&    get_choice_at);
 
-    void terminate(IFloat reward);
+    void terminate();
 
     void backstep();
 
@@ -57,16 +59,17 @@ private:
         IFloat      value_lump;
     };
 
-    IGetVisits&       get_visits_;
-    IGetValue&        get_value_;
-    ISetVisits&       set_visits_;
-    ISetValue&        set_value_;
-    IGetDispatches&   get_dispatches_;
-    ISetDispatches&   set_dispatches_;
+    IGetVisits&        get_visits_;
+    IGetValue&         get_value_;
+    ISetVisits&        set_visits_;
+    ISetValue&         set_value_;
+    IGetDispatches&    get_dispatches_;
+    ISetDispatches&    set_dispatches_;
     IComputeBatchSize& compute_batch_size_;
-    IWalker&          walker_;
-    IRolloutChoose&   rollout_;
-    IFloat            exploration_constant_;
+    IWalker&           walker_;
+    IRolloutChoose&    rollout_;
+    IGetValueDelta&    value_delta_;
+    IFloat             exploration_constant_;
 
     std::stack<frame> stack_;
     bool              in_rollout_;
@@ -78,8 +81,8 @@ private:
 template<typename INH, typename IC, typename IF,
          typename IGVis, typename IGVal, typename ISVis, typename ISVal,
          typename IGD, typename ISD, typename IBS,
-         typename IW, typename IGCC, typename IGCA, typename IRC>
-dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IRC>::dbuct(
+         typename IW, typename IGCC, typename IGCA, typename IRC, typename IGVD>
+dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IRC, IGVD>::dbuct(
         IGVis& get_visits,
         IGVal& get_value,
         ISVis& set_visits,
@@ -89,6 +92,7 @@ dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IR
         IBS&   compute_batch_size,
         IW&    walker,
         IRC&   rollout,
+        IGVD&  value_delta,
         INH    root,
         IF     exploration_constant)
     : get_visits_(get_visits)
@@ -100,6 +104,7 @@ dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IR
     , compute_batch_size_(compute_batch_size)
     , walker_(walker)
     , rollout_(rollout)
+    , value_delta_(value_delta)
     , exploration_constant_(exploration_constant)
     , in_rollout_(false)
 {
@@ -109,9 +114,9 @@ dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IR
 template<typename INH, typename IC, typename IF,
          typename IGVis, typename IGVal, typename ISVis, typename ISVal,
          typename IGD, typename ISD, typename IBS,
-         typename IW, typename IGCC, typename IGCA, typename IRC>
+         typename IW, typename IGCC, typename IGCA, typename IRC, typename IGVD>
 IC
-dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IRC>::choose(
+dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IRC, IGVD>::choose(
         const IGCC& get_choice_count,
         const IGCA& get_choice_at)
 {
@@ -175,13 +180,12 @@ dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IR
 template<typename INH, typename IC, typename IF,
          typename IGVis, typename IGVal, typename ISVis, typename ISVal,
          typename IGD, typename ISD, typename IBS,
-         typename IW, typename IGCC, typename IGCA, typename IRC>
+         typename IW, typename IGCC, typename IGCA, typename IRC, typename IGVD>
 void
-dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IRC>::terminate(
-        IF reward)
+dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IRC, IGVD>::terminate()
 {
     add_visits(1);
-    add_value(reward);
+    add_value(value_delta_.get_value_delta(stack_.top().handle));
 
     while (stack_.top().visit_lump >= stack_.top().budget)
         backstep();
@@ -192,9 +196,9 @@ dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IR
 template<typename INH, typename IC, typename IF,
          typename IGVis, typename IGVal, typename ISVis, typename ISVal,
          typename IGD, typename ISD, typename IBS,
-         typename IW, typename IGCC, typename IGCA, typename IRC>
+         typename IW, typename IGCC, typename IGCA, typename IRC, typename IGVD>
 void
-dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IRC>::add_visits(
+dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IRC, IGVD>::add_visits(
         size_t v)
 {
     frame& f = stack_.top();
@@ -205,9 +209,9 @@ dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IR
 template<typename INH, typename IC, typename IF,
          typename IGVis, typename IGVal, typename ISVis, typename ISVal,
          typename IGD, typename ISD, typename IBS,
-         typename IW, typename IGCC, typename IGCA, typename IRC>
+         typename IW, typename IGCC, typename IGCA, typename IRC, typename IGVD>
 void
-dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IRC>::add_value(
+dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IRC, IGVD>::add_value(
         IF l)
 {
     frame& f = stack_.top();
@@ -218,9 +222,9 @@ dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IR
 template<typename INH, typename IC, typename IF,
          typename IGVis, typename IGVal, typename ISVis, typename ISVal,
          typename IGD, typename ISD, typename IBS,
-         typename IW, typename IGCC, typename IGCA, typename IRC>
+         typename IW, typename IGCC, typename IGCA, typename IRC, typename IGVD>
 void
-dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IRC>::backstep()
+dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IRC, IGVD>::backstep()
 {
     const frame& current = stack_.top();
     size_t v = current.visit_lump;

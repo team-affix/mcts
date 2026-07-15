@@ -412,7 +412,8 @@ protected:
                              batch_t,
                              path_walker,
                              std::vector<jump_t>, std::vector<jump_t>,
-                             rollout_t>;
+                             rollout_t,
+                             monte_carlo::uniform_value_delta<double>>;
 
     static constexpr double kTolerance = 0.001;
 
@@ -429,10 +430,11 @@ protected:
         path_walker      walker;
         dispatches_t     dispatches;
         batch_t          batch(grant_increment_interval);
+        monte_carlo::uniform_value_delta<double> delta;
         std::vector<int> root = {-1};
 
         dbuct_t d(visits, value, visits, value, dispatches, dispatches, batch,
-                  walker, rollout, root, exploration_constant);
+                  walker, rollout, delta, root, exploration_constant);
 
         std::vector<int> path = root;
 
@@ -457,7 +459,8 @@ protected:
                 ep_score += track[position];
             }
 
-            d.terminate(ep_score);
+            delta.set_value(ep_score);
+            d.terminate();
             path.resize(d.depth());
         }
     }
@@ -472,10 +475,11 @@ protected:
         path_walker      walker;
         dispatches_t     dispatches;
         batch_t          batch(std::numeric_limits<size_t>::max());
+        monte_carlo::uniform_value_delta<double> delta;
         std::vector<int> root = {-1};
 
         dbuct_t d(visits, value, visits, value, dispatches, dispatches, batch,
-                  walker, rollout, root, 0.0);
+                  walker, rollout, delta, root, 0.0);
 
         int    position = -1;
         double ep_score = 0.0;
@@ -489,7 +493,8 @@ protected:
             ep_score += track[position];
         }
 
-        d.terminate(ep_score);
+        delta.set_value(ep_score);
+        d.terminate();
         return ep_score;
     }
 
@@ -585,7 +590,8 @@ protected:
                              batch_t,
                              position_walker,
                              std::vector<jump_t>, std::vector<jump_t>,
-                             rollout_t>;
+                             rollout_t,
+                             monte_carlo::uniform_value_delta<double>>;
 
     static constexpr double kTolerance = 0.001;
 
@@ -602,9 +608,10 @@ protected:
         position_walker walker;
         dispatches_t    dispatches;
         batch_t         batch(grant_increment_interval);
+        monte_carlo::uniform_value_delta<double> delta;
 
         dbuct_t d(visits, value, visits, value, dispatches, dispatches, batch,
-                  walker, rollout, -1, exploration_constant);
+                  walker, rollout, delta, -1, exploration_constant);
 
         std::vector<int> path = {-1};
 
@@ -621,7 +628,8 @@ protected:
                     path.push_back(next);
                 if (next >= static_cast<int>(track.size()))
                 {
-                    d.terminate(reward);
+                    delta.set_value(reward);
+                    d.terminate();
                     path.resize(d.depth());
                     break;
                 }
@@ -641,9 +649,10 @@ protected:
         position_walker walker;
         dispatches_t    dispatches;
         batch_t         batch(std::numeric_limits<size_t>::max());
+        monte_carlo::uniform_value_delta<double> delta;
 
         dbuct_t d(visits, value, visits, value, dispatches, dispatches, batch,
-                  walker, rollout, -1, 0.0);
+                  walker, rollout, delta, -1, 0.0);
 
         int    position = -1;
         double reward   = 0.0;
@@ -654,7 +663,8 @@ protected:
             int    next   = position + chosen;
             if (next >= static_cast<int>(track.size()))
             {
-                d.terminate(reward);
+                delta.set_value(reward);
+                d.terminate();
                 break;
             }
             position = next;
@@ -757,7 +767,8 @@ protected:
                              batch_t,
                              position_walker,
                              std::vector<jump_t>, std::vector<jump_t>,
-                             rollout_t>;
+                             rollout_t,
+                             monte_carlo::uniform_value_delta<double>>;
 
     // One sim episode using the terminal-reward convention (reward = last
     // in-bounds position's track value).
@@ -812,9 +823,10 @@ protected:
         position_walker walker;
         dispatches_t    dispatches;
         batch_t         batch(std::numeric_limits<size_t>::max());
+        monte_carlo::uniform_value_delta<double> delta;
 
         dbuct_t d(visits, value, visits, value, dispatches, dispatches, batch,
-                  walker, rollout, -1, c);
+                  walker, rollout, delta, -1, c);
 
         std::vector<int> path = {-1};
 
@@ -831,7 +843,8 @@ protected:
                     path.push_back(next);
                 if (next >= static_cast<int>(track.size()))
                 {
-                    d.terminate(reward);
+                    delta.set_value(reward);
+                    d.terminate();
                     path.resize(d.depth());
                     break;
                 }
@@ -939,7 +952,8 @@ protected:
                              batch_t,
                              position_walker,
                              std::vector<jump_t>, std::vector<jump_t>,
-                             rollout_t>;
+                             rollout_t,
+                             monte_carlo::uniform_value_delta<double>>;
 };
 
 TEST_F(DbuctInRolloutTest, FlagTransitionsEpisodes1And2)
@@ -955,9 +969,10 @@ TEST_F(DbuctInRolloutTest, FlagTransitionsEpisodes1And2)
     position_walker           walker;
     dispatches_t              dispatches;
     batch_t                   batch(std::numeric_limits<size_t>::max());
+    monte_carlo::uniform_value_delta<double> delta;
 
     dbuct_t d(visits, value, visits, value, dispatches, dispatches, batch,
-              walker, rollout, -1, 1.0);
+              walker, rollout, delta, -1, 1.0);
 
     // Episode 1: root has 0 visits → in_rollout flips on the very first choose().
     EXPECT_FALSE(d.in_rollout());
@@ -968,7 +983,8 @@ TEST_F(DbuctInRolloutTest, FlagTransitionsEpisodes1And2)
     d.choose(jumps, jumps);        // still in rollout (pos0 → jump → OOB next)
     EXPECT_TRUE(d.in_rollout());   // flag persists until terminate()
 
-    d.terminate(5.0);              // resets flag
+    delta.set_value(5.0);
+    d.terminate();                 // resets flag
     EXPECT_FALSE(d.in_rollout());
 
     // Episode 2: root (1 visit) → UCB → pos0 pushed; pos0 (0 visits) → expansion.
@@ -980,7 +996,8 @@ TEST_F(DbuctInRolloutTest, FlagTransitionsEpisodes1And2)
     d.choose(jumps, jumps);        // at pos0 (0 visits): expansion, rollout chosen
     EXPECT_TRUE(d.in_rollout());  // flipped exactly here
 
-    d.terminate(5.0);
+    delta.set_value(5.0);
+    d.terminate();
     EXPECT_FALSE(d.in_rollout());
 }
 
@@ -1008,7 +1025,10 @@ protected:
                              batch_t,
                              position_walker,
                              std::vector<jump_t>, std::vector<jump_t>,
-                             rollout_t>;
+                             rollout_t,
+                             monte_carlo::uniform_value_delta<double>>;
+
+    monte_carlo::uniform_value_delta<double> delta;
 
     void run_episode(dbuct_t&                   d,
                      const std::vector<double>& track,
@@ -1026,7 +1046,8 @@ protected:
                 path.push_back(next);
             if (next >= static_cast<int>(track.size()))
             {
-                d.terminate(reward);
+                delta.set_value(reward);
+                d.terminate();
                 path.resize(d.depth());
                 return;
             }
@@ -1054,7 +1075,7 @@ TEST_F(DbuctDepthTest, ReturnsCorrectCampingFrameIndex)
     batch_t                   batch(2);   // GII = 2
 
     dbuct_t d(visits, value, visits, value, dispatches, dispatches, batch,
-              walker, rollout, -1, 0.0);
+              walker, rollout, delta, -1, 0.0);
 
     std::vector<int> path = {-1};
 
@@ -1102,7 +1123,7 @@ TEST_F(DbuctDepthTest, ManualBackstepToRootOverridesCamping)
     batch_t                   batch(2);   // GII = 2
 
     dbuct_t d(visits, value, visits, value, dispatches, dispatches, batch,
-              walker, rollout, -1, 0.0);
+              walker, rollout, delta, -1, 0.0);
 
     std::vector<int> path = {-1};
 
@@ -1126,7 +1147,8 @@ TEST_F(DbuctDepthTest, ManualBackstepToRootOverridesCamping)
                 path.push_back(next);
             if (next >= static_cast<int>(track.size()))
             {
-                d.terminate(reward);
+                delta.set_value(reward);
+                d.terminate();
                 while (d.depth() > 1)
                     d.backstep();
                 path.resize(d.depth());
@@ -1171,7 +1193,10 @@ protected:
                              batch_t,
                              position_walker,
                              std::vector<jump_t>, std::vector<jump_t>,
-                             rollout_t>;
+                             rollout_t,
+                             monte_carlo::uniform_value_delta<double>>;
+
+    monte_carlo::uniform_value_delta<double> delta;
 
     void run_episode(dbuct_t&                   d,
                      const std::vector<double>& track,
@@ -1189,7 +1214,8 @@ protected:
                 path.push_back(next);
             if (next >= static_cast<int>(track.size()))
             {
-                d.terminate(reward);
+                delta.set_value(reward);
+                d.terminate();
                 path.resize(d.depth());
                 return;
             }
@@ -1230,7 +1256,7 @@ TEST_F(DbuctGrantFormulaTest, GrantGrowsWithRootDispatchesGII3)
     position_walker           walker;
 
     dbuct_t d(visits, value, visits, value, dispatches, dispatches, batch,
-              walker, rollout, -1, 0.0);
+              walker, rollout, delta, -1, 0.0);
     std::vector<int> path = {-1};
 
     // Seed root's initial visit (rollout phase; no UCB dispatch happens here).
@@ -1266,7 +1292,7 @@ TEST_F(DbuctGrantFormulaTest, GrantGrowsWithRootDispatchesGII5)
     position_walker           walker;
 
     dbuct_t d(visits, value, visits, value, dispatches, dispatches, batch,
-              walker, rollout, -1, 0.0);
+              walker, rollout, delta, -1, 0.0);
     std::vector<int> path = {-1};
 
     // Seed root's initial visit (rollout phase; no UCB dispatch happens here).
@@ -1314,7 +1340,10 @@ protected:
                              batch_t,
                              position_walker,
                              std::vector<jump_t>, std::vector<jump_t>,
-                             rollout_t>;
+                             rollout_t,
+                             monte_carlo::uniform_value_delta<double>>;
+
+    monte_carlo::uniform_value_delta<double> delta;
 
     // Runs one episode and returns the reward value passed to terminate().
     // Reward is pre-initialised from the starting position so that camping
@@ -1336,7 +1365,8 @@ protected:
                 path.push_back(next);
             if (next >= static_cast<int>(track.size()))
             {
-                d.terminate(reward);
+                delta.set_value(reward);
+                d.terminate();
                 path.resize(d.depth());
                 return reward;
             }
@@ -1390,7 +1420,7 @@ TEST_F(DbuctCampingLumpTest, LumpInvariantHoldsAcrossGrantPeriods)
     position_walker           walker;
 
     dbuct_t d(visits, value, visits, value, dispatches, dispatches, batch,
-              walker, rollout, -1, 0.0);
+              walker, rollout, delta, -1, 0.0);
     std::vector<int> path = {-1};
 
     // Loop over 10 sequential periods.
@@ -1436,7 +1466,8 @@ protected:
                              batch_t,
                              position_walker,
                              std::vector<jump_t>, std::vector<jump_t>,
-                             rollout_t>;
+                             rollout_t,
+                             monte_carlo::uniform_value_delta<double>>;
 
     void run_episode(dbuct_t&                   d,
                      const std::vector<double>& track,
