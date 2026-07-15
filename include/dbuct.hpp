@@ -8,54 +8,6 @@
 namespace monte_carlo
 {
 
-// Standard template parameter order:
-//   1. domain types    — INodeHandle, IChoice, IFloat
-//   2. read stats      — IGetVisits, IGetValue
-//   3. write stats     — ISetVisits, ISetValue
-//   4. dispatch stats  — IGetDispatches, ISetDispatches
-//   5. batch policy    — IComputeBatchSize
-//   6. graph           — IWalker
-//   7. choice access   — IGetChoiceCount, IGetChoiceAt
-//   8. rollout         — IRolloutChoose
-//
-// Policy requirements:
-//   IGetVisits:       get_visits(const INodeHandle&) -> size_t   -- 0 if unseen
-//   IGetValue:        get_value(const INodeHandle&)  -> IFloat   -- 0 if unseen
-//   ISetVisits:       set_visits(const INodeHandle&, size_t) -> void
-//   ISetValue:        set_value(const INodeHandle&, IFloat)  -> void
-//   IGetDispatches:   get_dispatches(const INodeHandle&) -> size_t  -- 0 if unseen
-//   ISetDispatches:   set_dispatches(const INodeHandle&, size_t) -> void
-//   IComputeBatchSize:compute_batch_size(size_t dispatch_count) -> size_t
-//   IWalker:          walk(const INodeHandle&, const IChoice&) -> INodeHandle
-//   IGetChoiceCount:  size() -> size_t
-//   IGetChoiceAt:     at(size_t) -> IChoice
-//   IRolloutChoose:   rollout_choose(const IGetChoiceCount&, const IGetChoiceAt&) -> IChoice
-//
-// Caller contract:
-//   - Create one dbuct for the entire training run (not one per episode).
-//   - Maintain your own path stack of visited nodes alongside the episode.
-//   - Drive each episode: call choose() per step until terminal, then call
-//     terminate(reward).  Sync your path via path.resize(depth()).
-//   - Optionally call backstep() after terminate() to climb toward root.
-//     Every ancestor of the resume node has nonzero budget remaining, so
-//     backstep() is always safe before the next sim.
-//
-// Budget invariant: for each node n, budget(parent(n)) >= budget(n).
-// terminate() backs up until the first frame with nonzero remaining budget.
-//
-// Zero-default contract: IGetVisits, IGetValue, IGetDispatches must return 0
-//   for unseen handles.
-//
-// Grant formula:
-//   IComputeBatchSize::compute_batch_size(D) is called with the pre-increment
-//   dispatch count D for the current node.  linear_batch_increment implements
-//   1 + D / B, where B is the grant_increment_interval.
-//   B = SIZE_MAX gives compute_batch_size = 1 always, equivalent to vanilla UCT.
-//
-// UCB1:
-//   exploit = get_value(child) / get_visits(child)
-//   explore = c * sqrt( ln(get_visits(parent)) / get_visits(child) )
-
 template<
     typename INodeHandle,
     typename IChoice,
@@ -89,12 +41,8 @@ struct dbuct
     IChoice choose(const IGetChoiceCount& get_choice_count,
                    const IGetChoiceAt&    get_choice_at);
 
-    // Backpropagate the terminal reward, then backstep until the top frame
-    // has nonzero remaining budget (visit_lump < budget).
     void terminate(IFloat reward);
 
-    // Pop one frame and deposit its lump into the parent.  Caller-controlled
-    // backtracking after terminate(); safe while depth() > 0.
     void backstep();
 
     size_t depth() const { return stack_.size(); }
@@ -105,8 +53,8 @@ private:
     {
         INodeHandle handle;
         size_t      budget;
-        size_t      visit_lump; // subtree sim count accumulated; deposited to parent on pop
-        IFloat      value_lump; // subtree reward sum accumulated; deposited to parent on pop
+        size_t      visit_lump;
+        IFloat      value_lump;
     };
 
     IGetVisits&       get_visits_;
@@ -126,18 +74,6 @@ private:
     void add_visits(size_t v);
     void add_value(IFloat l);
 };
-
-// ---------------------------------------------------------------------------
-// member function definitions
-// ---------------------------------------------------------------------------
-
-// Abbreviations used in template heads below:
-//   INH  = INodeHandle      IC   = IChoice         IF   = IFloat
-//   IGVis= IGetVisits        IGVal= IGetValue
-//   ISVis= ISetVisits        ISVal= ISetValue
-//   IGD  = IGetDispatches   ISD  = ISetDispatches   IBS  = IComputeBatchSize
-//   IW   = IWalker          IGCC = IGetChoiceCount  IGCA = IGetChoiceAt
-//   IRC  = IRolloutChoose
 
 template<typename INH, typename IC, typename IF,
          typename IGVis, typename IGVal, typename ISVis, typename ISVal,
@@ -181,14 +117,10 @@ dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IR
 {
     frame& current        = stack_.top();
     size_t current_visits = get_visits_.get_visits(current.handle);
-
-    if (!in_rollout_ && current_visits == 0)
-        in_rollout_ = true;
-
+    
     if (in_rollout_)
         return rollout_.rollout_choose(get_choice_count, get_choice_at);
 
-    // UCB1 selection.
     IF     best_score = -std::numeric_limits<IF>::infinity();
     size_t best_i     = 0;
     size_t n          = get_choice_count.size();
@@ -230,6 +162,12 @@ dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IR
     set_dispatches_.set_dispatches(current.handle, current_dispatches + 1);
 
     stack_.push({child_handle, grant_k, 0, IF{0}});
+
+    size_t child_visits = get_visits_.get_visits(child_handle);
+    
+    // expansion+rollout phase (frame already pushed so expansion done)
+    if (child_visits == 0)
+        in_rollout_ = true;
 
     return chosen;
 }
@@ -292,6 +230,6 @@ dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IR
     add_value(l);
 }
 
-} // namespace monte_carlo
+}
 
-#endif // DBUCT_HPP
+#endif

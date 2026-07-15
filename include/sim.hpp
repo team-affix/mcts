@@ -145,9 +145,6 @@ sim<INodeHandle, IChoice, IFloat,
 {
     ++sim_length_;
 
-    if (!in_rollout_ && get_visits_.get_visits(current_node_) == 0)
-        in_rollout_ = true;
-
     if (in_rollout_)
     {
         IChoice chosen = rollout_.rollout_choose(get_choice_count, get_choice_at);
@@ -190,6 +187,12 @@ sim<INodeHandle, IChoice, IFloat,
     INodeHandle chosen_child = walker_.walk(current_node_, chosen);
     backprop_path_.push_back(chosen_child);
     current_node_ = chosen_child;
+
+    size_t child_visits = get_visits_.get_visits(chosen_child);
+    
+    if (child_visits == 0)
+        in_rollout_ = true;
+
     return chosen;
 }
 

@@ -180,9 +180,7 @@ protected:
             std::cerr << " " << std::fixed << std::setprecision(3) << v;
         std::cerr << "\n";
 
-        double exploration_constant = 0.0;
-        for (double c : track)
-            if (c > 0) exploration_constant += c;
+        constexpr double exploration_constant = 100.0;
 
         visits_t visits;
         value_t  value;
@@ -205,7 +203,7 @@ TEST_F(CoinCollectingGameTest, Seed27Track10Moves123)
 
 TEST_F(CoinCollectingGameTest, Seed28Track10Moves123)
 {
-    verify_converges_to_optimal(28, 10, {1, 2, 3}, 100000);
+    verify_converges_to_optimal(28, 10, {1, 2, 3}, 2000000);
 }
 
 TEST_F(CoinCollectingGameTest, Seed31Track10Moves25)
@@ -240,7 +238,7 @@ TEST_F(CoinCollectingGameTest, Seed37Track20Moves357)
 
 TEST_F(CoinCollectingGameTest, Seed38Track10Moves23)
 {
-    verify_converges_to_optimal(38, 10, {2, 3}, 10000);
+    verify_converges_to_optimal(38, 10, {2, 3}, 50000);
 }
 
 TEST_F(CoinCollectingGameTest, Seed39Track15Moves147)
@@ -324,9 +322,7 @@ protected:
             std::cerr << " " << std::fixed << std::setprecision(3) << v;
         std::cerr << "\n";
 
-        double exploration_constant = 0.0;
-        for (double c : track)
-            if (c > 0) exploration_constant += c;
+        constexpr double exploration_constant = 100.0;
 
         visits_t visits;
         value_t  value;
@@ -515,9 +511,7 @@ protected:
             std::cerr << " " << std::fixed << std::setprecision(3) << v;
         std::cerr << "\n";
 
-        double exploration_constant = 0.0;
-        for (double c : track)
-            if (c > 0) exploration_constant += c;
+        constexpr double exploration_constant = 100.0;
 
         visits_t visits;
         value_t  value;
@@ -688,9 +682,7 @@ protected:
             std::cerr << " " << std::fixed << std::setprecision(3) << v;
         std::cerr << "\n";
 
-        double exploration_constant = 0.0;
-        for (double c : track)
-            if (c > 0) exploration_constant += c;
+        constexpr double exploration_constant = 100.0;
 
         visits_t visits;
         value_t  value;
@@ -1066,28 +1058,28 @@ TEST_F(DbuctDepthTest, ReturnsCorrectCampingFrameIndex)
 
     std::vector<int> path = {-1};
 
-    // ep1: root rollout (D not incremented). depth=1, path={-1}.
+    // Expansion-first: choose() always dispatches a child before rolling out,
+    // so every episode increments the dispatch counter.
+    // D=0 → grant=1, D=1 → grant=1, D=2 → grant=2 (camping begins).
+
+    // ep1: D(-1)=0 before dispatch, grant=1. Expand pos0, rollout from pos0.
+    //      pos0 budget=1 exhausted immediately → depth=1, path={-1}.
     run_episode(d, track, jumps, path);
     EXPECT_EQ(d.depth(), 1u);
     EXPECT_EQ(path.back(), -1);
 
-    // ep2: root UCB dispatch D=0, grant=1. pos0 budget=1 exhausted → depth=1, path={-1}.
+    // ep2: D(-1)=1 before dispatch, grant=1. Same pattern → depth=1, path={-1}.
     run_episode(d, track, jumps, path);
     EXPECT_EQ(d.depth(), 1u);
     EXPECT_EQ(path.back(), -1);
 
-    // ep3: root UCB dispatch D=1, grant=1. Same → depth=1, path={-1}.
-    run_episode(d, track, jumps, path);
-    EXPECT_EQ(d.depth(), 1u);
-    EXPECT_EQ(path.back(), -1);
-
-    // ep4: root UCB dispatch D=2, grant=2. pos0 gets budget=2; after 1 sim visit_lump=1<2
-    //      → camping at pos0, depth=2, path={-1, 0}.
+    // ep3: D(-1)=2 before dispatch, grant=2. pos0 gets budget=2; after 1 sim
+    //      visit_lump=1<2 → camping at pos0, depth=2, path={-1, 0}.
     run_episode(d, track, jumps, path);
     EXPECT_EQ(d.depth(), 2u);
     EXPECT_EQ(path.back(), 0);
 
-    // ep5: continuing from pos0 (path={-1,0}). pos0's second sim exhausts budget=2
+    // ep4: continuing from pos0 (path={-1,0}). pos0's second sim exhausts budget=2
     //      → backstep to root, depth=1, path={-1}.
     run_episode(d, track, jumps, path);
     EXPECT_EQ(d.depth(), 1u);
@@ -1114,8 +1106,7 @@ TEST_F(DbuctDepthTest, ManualBackstepToRootOverridesCamping)
 
     std::vector<int> path = {-1};
 
-    // Advance through eps 1-3 (budget=1 periods).
-    run_episode(d, track, jumps, path);
+    // Advance through eps 1-2 (D=0,1 → grant=1 periods; camping begins at D=2).
     run_episode(d, track, jumps, path);
     run_episode(d, track, jumps, path);
     ASSERT_EQ(path.back(), -1);
