@@ -39,6 +39,7 @@ namespace monte_carlo
 // UCB1:
 //   exploit = get_value(child) / get_visits(child)
 //   explore = c * sqrt( ln(get_visits(parent)) / get_visits(child) )
+//   where c = get_exploration_constant(parent)
 
 template<
     typename INodeHandle,
@@ -52,33 +53,34 @@ template<
     typename IGetChoiceCount,
     typename IGetChoiceAt,
     typename IRolloutChoose,
-    typename IGetValueDelta
+    typename IGetValueDelta,
+    typename IGetExplorationConstant
 >
 struct sim
 {
-    sim(IGetVisits&        get_visits,
-        IGetValue&         get_value,
-        ISetVisits&        set_visits,
-        ISetValue&         set_value,
-        IWalker&           walker,
-        IRolloutChoose&    rollout,
-        IGetValueDelta&    value_delta,
-        INodeHandle root,
-        IFloat             exploration_constant);
+    sim(IGetVisits&              get_visits,
+        IGetValue&               get_value,
+        ISetVisits&              set_visits,
+        ISetValue&               set_value,
+        IWalker&                 walker,
+        IRolloutChoose&          rollout,
+        IGetValueDelta&          value_delta,
+        IGetExplorationConstant& get_exploration_constant,
+        INodeHandle              root);
 
     IChoice choose(const IGetChoiceCount& get_choice_count, const IGetChoiceAt& get_choice_at);
     void    terminate();
     size_t  length() const;
 
 private:
-    IGetVisits&     get_visits_;
-    IGetValue&      get_value_;
-    ISetVisits&     set_visits_;
-    ISetValue&      set_value_;
-    IWalker&        walker_;
-    IRolloutChoose& rollout_;
-    IGetValueDelta& value_delta_;
-    IFloat          exploration_constant_;
+    IGetVisits&              get_visits_;
+    IGetValue&               get_value_;
+    ISetVisits&              set_visits_;
+    ISetValue&               set_value_;
+    IWalker&                 walker_;
+    IRolloutChoose&          rollout_;
+    IGetValueDelta&          value_delta_;
+    IGetExplorationConstant& get_exploration_constant_;
 
     INodeHandle              current_node_;
     std::vector<INodeHandle> backprop_path_;
@@ -96,22 +98,22 @@ template<typename INodeHandle, typename IChoice, typename IFloat,
          typename IWalker,
          typename IGetChoiceCount, typename IGetChoiceAt,
          typename IRolloutChoose,
-         typename IGetValueDelta>
+         typename IGetValueDelta, typename IGEC>
 sim<INodeHandle, IChoice, IFloat,
     IGetVisits, IGetValue, ISetVisits, ISetValue,
     IWalker,
     IGetChoiceCount, IGetChoiceAt,
     IRolloutChoose,
-    IGetValueDelta>::sim(
-        IGetVisits&        get_visits,
-        IGetValue&         get_value,
-        ISetVisits&        set_visits,
-        ISetValue&         set_value,
-        IWalker&           walker,
-        IRolloutChoose&    rollout,
-        IGetValueDelta&    value_delta,
-        INodeHandle root,
-        IFloat             exploration_constant)
+    IGetValueDelta, IGEC>::sim(
+        IGetVisits& get_visits,
+        IGetValue&  get_value,
+        ISetVisits& set_visits,
+        ISetValue&  set_value,
+        IWalker&    walker,
+        IRolloutChoose& rollout,
+        IGetValueDelta& value_delta,
+        IGEC&           get_exploration_constant,
+        INodeHandle     root)
     : get_visits_(get_visits)
     , get_value_(get_value)
     , set_visits_(set_visits)
@@ -119,7 +121,7 @@ sim<INodeHandle, IChoice, IFloat,
     , walker_(walker)
     , rollout_(rollout)
     , value_delta_(value_delta)
-    , exploration_constant_(exploration_constant)
+    , get_exploration_constant_(get_exploration_constant)
     , current_node_(root)
     , backprop_path_({root})
     , sim_length_(0)
@@ -132,14 +134,14 @@ template<typename INodeHandle, typename IChoice, typename IFloat,
          typename IWalker,
          typename IGetChoiceCount, typename IGetChoiceAt,
          typename IRolloutChoose,
-         typename IGetValueDelta>
+         typename IGetValueDelta, typename IGEC>
 IChoice
 sim<INodeHandle, IChoice, IFloat,
     IGetVisits, IGetValue, ISetVisits, ISetValue,
     IWalker,
     IGetChoiceCount, IGetChoiceAt,
     IRolloutChoose,
-    IGetValueDelta>::choose(
+    IGetValueDelta, IGEC>::choose(
         const IGetChoiceCount& get_choice_count,
         const IGetChoiceAt&    get_choice_at)
 {
@@ -156,6 +158,8 @@ sim<INodeHandle, IChoice, IFloat,
     IFloat best_score = -std::numeric_limits<IFloat>::infinity();
     size_t best_i     = 0;
     size_t n          = get_choice_count.size();
+    IFloat c          = get_exploration_constant_.get_exploration_constant(current_node_);
+    IFloat ln_parent  = std::log(static_cast<IFloat>(get_visits_.get_visits(current_node_)));
 
     for (size_t i = 0; i < n; ++i)
     {
@@ -171,10 +175,8 @@ sim<INodeHandle, IChoice, IFloat,
         }
 
         IFloat exploit = get_value_.get_value(child_node) / static_cast<IFloat>(child_v);
-        IFloat explore = std::sqrt(
-            std::log(static_cast<IFloat>(get_visits_.get_visits(current_node_)))
-            / static_cast<IFloat>(child_v));
-        IFloat score   = exploit + exploration_constant_ * explore;
+        IFloat explore = std::sqrt(ln_parent / static_cast<IFloat>(child_v));
+        IFloat score   = exploit + c * explore;
 
         if (score > best_score)
         {
@@ -202,14 +204,14 @@ template<typename INodeHandle, typename IChoice, typename IFloat,
          typename IWalker,
          typename IGetChoiceCount, typename IGetChoiceAt,
          typename IRolloutChoose,
-         typename IGetValueDelta>
+         typename IGetValueDelta, typename IGEC>
 void
 sim<INodeHandle, IChoice, IFloat,
     IGetVisits, IGetValue, ISetVisits, ISetValue,
     IWalker,
     IGetChoiceCount, IGetChoiceAt,
     IRolloutChoose,
-    IGetValueDelta>::terminate()
+    IGetValueDelta, IGEC>::terminate()
 {
     for (const INodeHandle& node : backprop_path_)
     {
@@ -225,14 +227,14 @@ template<typename INodeHandle, typename IChoice, typename IFloat,
          typename IWalker,
          typename IGetChoiceCount, typename IGetChoiceAt,
          typename IRolloutChoose,
-         typename IGetValueDelta>
+         typename IGetValueDelta, typename IGEC>
 size_t
 sim<INodeHandle, IChoice, IFloat,
     IGetVisits, IGetValue, ISetVisits, ISetValue,
     IWalker,
     IGetChoiceCount, IGetChoiceAt,
     IRolloutChoose,
-    IGetValueDelta>::length() const
+    IGetValueDelta, IGEC>::length() const
 {
     return sim_length_;
 }

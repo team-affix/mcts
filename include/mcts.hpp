@@ -9,5 +9,6 @@
 #include "linear_batch_increment.hpp"
 #include "random_rollout.hpp"
 #include "uniform_value_delta.hpp"
+#include "uniform_exploration_constant.hpp"
 
 #endif // MCTS_HPP
