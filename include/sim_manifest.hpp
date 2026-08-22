@@ -1,6 +1,7 @@
 #ifndef SIM_MANIFEST_HPP
 #define SIM_MANIFEST_HPP
 
+#include "in_rollout_flag.hpp"
 #include "random_rollout.hpp"
 #include "sim.hpp"
 #include "ucb1.hpp"
@@ -37,7 +38,8 @@ struct sim_manifest
                                IGetVisits, ISetVisits,
                                IWalker,
                                IGetChoiceCount, IGetChoiceAt,
-                               policy_t, rollout_t, value_update_t>;
+                               policy_t, rollout_t, value_update_t,
+                               in_rollout_flag, in_rollout_flag>;
 
     sim_manifest(IGetVisits& get_visits,
                  ISetVisits& set_visits,
@@ -53,6 +55,7 @@ struct sim_manifest
     delta_t        delta;
     value_update_t value_update;
     policy_t       policy;
+    in_rollout_flag in_rollout;
     sim_t          s;
 };
 
@@ -73,7 +76,9 @@ sim_manifest<INH, IC, IF, IGVis, ISVis, IGVal, ISVal, IW, IGCC, IGCA, IRG>::sim_
     , delta()
     , value_update(get_value, set_value, delta)
     , policy(get_visits, get_value, walker, this->exploration_constant)
-    , s(get_visits, set_visits, walker, policy, rollout, value_update, root)
+    , in_rollout()
+    , s(get_visits, set_visits, walker, policy, rollout, value_update,
+        in_rollout, in_rollout, root)
 {}
 
 }

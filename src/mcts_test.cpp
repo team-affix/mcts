@@ -384,7 +384,7 @@ class DbuctCoinCollectingGameTest : public ::testing::Test
 protected:
     using visits_t   = monte_carlo::visits_table<std::vector<int>, path_unordered_map>;
     using value_t    = monte_carlo::value_table<std::vector<int>, double, path_unordered_map>;
-    using manifest_t = monte_carlo::dbuct_manifest<
+    using manifest_t = monte_carlo::dbuct_value_manifest<
                           std::vector<int>, jump_t, double,
                           visits_t, visits_t, value_t, value_t,
                           path_walker,
@@ -421,9 +421,9 @@ protected:
 
             while (true)
             {
-                jump_t chosen = m.d.choose(jumps, jumps);
+                jump_t chosen = m.chooser.choose(jumps, jumps);
                 position += chosen;
-                if (!m.d.in_rollout())
+                if (!m.in_rollout.get_in_rollout())
                     path.push_back(position);
                 if (position >= static_cast<int>(track.size()))
                     break;
@@ -431,7 +431,7 @@ protected:
             }
 
             m.delta.set_value(ep_score);
-            m.d.terminate_and_backtrack();
+            m.terminator.terminate();
             path.resize(m.frame_stack.size());
         }
     }
@@ -452,7 +452,7 @@ protected:
 
         while (true)
         {
-            jump_t chosen = m.d.choose(jumps, jumps);
+            jump_t chosen = m.chooser.choose(jumps, jumps);
             position += chosen;
             if (position >= static_cast<int>(track.size()))
                 break;
@@ -460,7 +460,7 @@ protected:
         }
 
         m.delta.set_value(ep_score);
-        m.d.terminate_and_backtrack();
+        m.terminator.terminate();
         return ep_score;
     }
 
@@ -544,7 +544,7 @@ class DbuctTerminalRewardGameTest : public ::testing::Test
 protected:
     using visits_t   = monte_carlo::visits_table<int, std::unordered_map>;
     using value_t    = monte_carlo::value_table<int, double, std::unordered_map>;
-    using manifest_t = monte_carlo::dbuct_manifest<
+    using manifest_t = monte_carlo::dbuct_value_manifest<
                           int, jump_t, double,
                           visits_t, visits_t, value_t, value_t,
                           position_walker,
@@ -574,14 +574,14 @@ protected:
 
             while (true)
             {
-                jump_t chosen = m.d.choose(jumps, jumps);
+                jump_t chosen = m.chooser.choose(jumps, jumps);
                 int    next   = position + chosen;
-                if (!m.d.in_rollout())
+                if (!m.in_rollout.get_in_rollout())
                     path.push_back(next);
                 if (next >= static_cast<int>(track.size()))
                 {
                     m.delta.set_value(reward);
-                    m.d.terminate_and_backtrack();
+                    m.terminator.terminate();
                     path.resize(m.frame_stack.size());
                     break;
                 }
@@ -605,12 +605,12 @@ protected:
 
         while (true)
         {
-            jump_t chosen = m.d.choose(jumps, jumps);
+            jump_t chosen = m.chooser.choose(jumps, jumps);
             int    next   = position + chosen;
             if (next >= static_cast<int>(track.size()))
             {
                 m.delta.set_value(reward);
-                m.d.terminate_and_backtrack();
+                m.terminator.terminate();
                 break;
             }
             position = next;
@@ -707,7 +707,7 @@ protected:
                                position_walker,
                                std::vector<jump_t>, std::vector<jump_t>,
                                std::mt19937>;
-    using dbuct_manifest_t = monte_carlo::dbuct_manifest<
+    using dbuct_value_manifest_t = monte_carlo::dbuct_value_manifest<
                                int, jump_t, double,
                                visits_t, visits_t, value_t, value_t,
                                position_walker,
@@ -752,7 +752,7 @@ protected:
                         double                     c,
                         int                        n)
     {
-        dbuct_manifest_t m(visits, visits, value, value, rng, c,
+        dbuct_value_manifest_t m(visits, visits, value, value, rng, c,
                            std::numeric_limits<size_t>::max(), -1);
 
         std::vector<int> path = {-1};
@@ -764,14 +764,14 @@ protected:
 
             while (true)
             {
-                jump_t chosen = m.d.choose(jumps, jumps);
+                jump_t chosen = m.chooser.choose(jumps, jumps);
                 int    next   = position + chosen;
-                if (!m.d.in_rollout())
+                if (!m.in_rollout.get_in_rollout())
                     path.push_back(next);
                 if (next >= static_cast<int>(track.size()))
                 {
                     m.delta.set_value(reward);
-                    m.d.terminate_and_backtrack();
+                    m.terminator.terminate();
                     path.resize(m.frame_stack.size());
                     break;
                 }
@@ -857,7 +857,7 @@ TEST_F(DbuctStatEquivalenceTest, MatchesSimSeed300Track6Moves123)
 // ---------------------------------------------------------------------------
 // DbuctInRolloutTest
 //
-// Verifies the in_rollout() state machine via its public accessor:
+// Verifies the in_rollout flag via its public collaborator:
 //   - false before any choose() in an episode
 //   - flips to true exactly when the expansion node is encountered
 //   - resets to false after terminate()
@@ -867,7 +867,7 @@ class DbuctInRolloutTest : public ::testing::Test
 protected:
     using visits_t   = monte_carlo::visits_table<int, std::unordered_map>;
     using value_t    = monte_carlo::value_table<int, double, std::unordered_map>;
-    using manifest_t = monte_carlo::dbuct_manifest<
+    using manifest_t = monte_carlo::dbuct_value_manifest<
                           int, jump_t, double,
                           visits_t, visits_t, value_t, value_t,
                           position_walker,
@@ -889,30 +889,30 @@ TEST_F(DbuctInRolloutTest, FlagTransitionsEpisodes1And2)
                  std::numeric_limits<size_t>::max(), -1);
 
     // Episode 1: root has 0 visits → in_rollout flips on the very first choose().
-    EXPECT_FALSE(m.d.in_rollout());
+    EXPECT_FALSE(m.in_rollout.get_in_rollout());
 
-    m.d.choose(jumps, jumps);        // at root (0 visits): immediate rollout, no frame pushed
-    EXPECT_TRUE(m.d.in_rollout());   // flipped at expansion (root itself is expansion node)
+    m.chooser.choose(jumps, jumps);        // at root (0 visits): immediate rollout, no frame pushed
+    EXPECT_TRUE(m.in_rollout.get_in_rollout());   // flipped at expansion (root itself is expansion node)
 
-    m.d.choose(jumps, jumps);        // still in rollout (pos0 → jump → OOB next)
-    EXPECT_TRUE(m.d.in_rollout());   // flag persists until terminate()
+    m.chooser.choose(jumps, jumps);        // still in rollout (pos0 → jump → OOB next)
+    EXPECT_TRUE(m.in_rollout.get_in_rollout());   // flag persists until terminate()
 
     m.delta.set_value(5.0);
-    m.d.terminate_and_backtrack();   // resets flag
-    EXPECT_FALSE(m.d.in_rollout());
+    m.terminator.terminate();   // resets flag
+    EXPECT_FALSE(m.in_rollout.get_in_rollout());
 
     // Episode 2: root (1 visit) → UCB → pos0 pushed; pos0 (0 visits) → expansion.
-    EXPECT_FALSE(m.d.in_rollout());
+    EXPECT_FALSE(m.in_rollout.get_in_rollout());
 
-    m.d.choose(jumps, jumps);        // UCB at root (1 visit): tree phase, pos0 frame pushed
-    EXPECT_FALSE(m.d.in_rollout()); // still tree phase — flag not set during UCB selection
+    m.chooser.choose(jumps, jumps);        // UCB at root (1 visit): tree phase, pos0 frame pushed
+    EXPECT_FALSE(m.in_rollout.get_in_rollout()); // still tree phase — flag not set during UCB selection
 
-    m.d.choose(jumps, jumps);        // at pos0 (0 visits): expansion, rollout chosen
-    EXPECT_TRUE(m.d.in_rollout());  // flipped exactly here
+    m.chooser.choose(jumps, jumps);        // at pos0 (0 visits): expansion, rollout chosen
+    EXPECT_TRUE(m.in_rollout.get_in_rollout());  // flipped exactly here
 
     m.delta.set_value(5.0);
-    m.d.terminate_and_backtrack();
-    EXPECT_FALSE(m.d.in_rollout());
+    m.terminator.terminate();
+    EXPECT_FALSE(m.in_rollout.get_in_rollout());
 }
 
 // ---------------------------------------------------------------------------
@@ -927,7 +927,7 @@ class DbuctDepthTest : public ::testing::Test
 protected:
     using visits_t   = monte_carlo::visits_table<int, std::unordered_map>;
     using value_t    = monte_carlo::value_table<int, double, std::unordered_map>;
-    using manifest_t = monte_carlo::dbuct_manifest<
+    using manifest_t = monte_carlo::dbuct_value_manifest<
                           int, jump_t, double,
                           visits_t, visits_t, value_t, value_t,
                           position_walker,
@@ -944,14 +944,14 @@ protected:
 
         while (true)
         {
-            jump_t chosen = m.d.choose(jumps, jumps);
+            jump_t chosen = m.chooser.choose(jumps, jumps);
             int    next   = position + chosen;
-            if (!m.d.in_rollout())
+            if (!m.in_rollout.get_in_rollout())
                 path.push_back(next);
             if (next >= static_cast<int>(track.size()))
             {
                 m.delta.set_value(reward);
-                m.d.terminate_and_backtrack();
+                m.terminator.terminate();
                 path.resize(m.frame_stack.size());
                 return;
             }
@@ -1035,14 +1035,14 @@ TEST_F(DbuctDepthTest, ManualBackstepToRootOverridesCamping)
 
         while (true)
         {
-            jump_t chosen = m.d.choose(jumps, jumps);
+            jump_t chosen = m.chooser.choose(jumps, jumps);
             int    next   = position + chosen;
-            if (!m.d.in_rollout())
+            if (!m.in_rollout.get_in_rollout())
                 path.push_back(next);
             if (next >= static_cast<int>(track.size()))
             {
                 m.delta.set_value(reward);
-                m.d.terminate_and_backtrack();
+                m.terminator.terminate();
                 while (m.frame_stack.size() > 1)
                     m.value_stack_controller.backstep();
                 path.resize(m.frame_stack.size());
@@ -1075,7 +1075,7 @@ class DbuctGrantFormulaTest : public ::testing::Test
 protected:
     using visits_t   = monte_carlo::visits_table<int, std::unordered_map>;
     using value_t    = monte_carlo::value_table<int, double, std::unordered_map>;
-    using manifest_t = monte_carlo::dbuct_manifest<
+    using manifest_t = monte_carlo::dbuct_value_manifest<
                           int, jump_t, double,
                           visits_t, visits_t, value_t, value_t,
                           position_walker,
@@ -1092,14 +1092,14 @@ protected:
 
         while (true)
         {
-            jump_t chosen = m.d.choose(jumps, jumps);
+            jump_t chosen = m.chooser.choose(jumps, jumps);
             int    next   = position + chosen;
-            if (!m.d.in_rollout())
+            if (!m.in_rollout.get_in_rollout())
                 path.push_back(next);
             if (next >= static_cast<int>(track.size()))
             {
                 m.delta.set_value(reward);
-                m.d.terminate_and_backtrack();
+                m.terminator.terminate();
                 path.resize(m.frame_stack.size());
                 return;
             }
@@ -1202,7 +1202,7 @@ class DbuctCampingLumpTest : public ::testing::Test
 protected:
     using visits_t   = monte_carlo::visits_table<int, std::unordered_map>;
     using value_t    = monte_carlo::value_table<int, double, std::unordered_map>;
-    using manifest_t = monte_carlo::dbuct_manifest<
+    using manifest_t = monte_carlo::dbuct_value_manifest<
                           int, jump_t, double,
                           visits_t, visits_t, value_t, value_t,
                           position_walker,
@@ -1223,14 +1223,14 @@ protected:
 
         while (true)
         {
-            jump_t chosen = m.d.choose(jumps, jumps);
+            jump_t chosen = m.chooser.choose(jumps, jumps);
             int    next   = position + chosen;
-            if (!m.d.in_rollout())
+            if (!m.in_rollout.get_in_rollout())
                 path.push_back(next);
             if (next >= static_cast<int>(track.size()))
             {
                 m.delta.set_value(reward);
-                m.d.terminate_and_backtrack();
+                m.terminator.terminate();
                 path.resize(m.frame_stack.size());
                 return reward;
             }

@@ -1,5 +1,5 @@
-#ifndef DBUCT_ADD_VISITS_HPP
-#define DBUCT_ADD_VISITS_HPP
+#ifndef DBUCT_VISIT_ADDER_HPP
+#define DBUCT_VISIT_ADDER_HPP
 
 #include <cstddef>
 #include "dbuct_frame.hpp"
@@ -13,11 +13,11 @@ template<
     typename IGetVisits,
     typename ISetVisits
 >
-struct dbuct_add_visits
+struct dbuct_visit_adder
 {
-    dbuct_add_visits(IGetTopFrame& get_top_frame,
-                     IGetVisits&   get_visits,
-                     ISetVisits&   set_visits);
+    dbuct_visit_adder(IGetTopFrame& get_top_frame,
+                      IGetVisits&   get_visits,
+                      ISetVisits&   set_visits);
 
     void add_visits(size_t v);
 
@@ -28,7 +28,7 @@ private:
 };
 
 template<typename INH, typename IGTF, typename IGVis, typename ISVis>
-dbuct_add_visits<INH, IGTF, IGVis, ISVis>::dbuct_add_visits(
+dbuct_visit_adder<INH, IGTF, IGVis, ISVis>::dbuct_visit_adder(
         IGTF&  get_top_frame,
         IGVis& get_visits,
         ISVis& set_visits)
@@ -38,7 +38,7 @@ dbuct_add_visits<INH, IGTF, IGVis, ISVis>::dbuct_add_visits(
 {}
 
 template<typename INH, typename IGTF, typename IGVis, typename ISVis>
-void dbuct_add_visits<INH, IGTF, IGVis, ISVis>::add_visits(size_t v)
+void dbuct_visit_adder<INH, IGTF, IGVis, ISVis>::add_visits(size_t v)
 {
     dbuct_frame<INH>& f = get_top_frame_.top();
     set_visits_.set_visits(f.handle, get_visits_.get_visits(f.handle) + v);

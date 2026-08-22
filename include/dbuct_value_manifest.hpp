@@ -1,20 +1,22 @@
-#ifndef DBUCT_MANIFEST_HPP
-#define DBUCT_MANIFEST_HPP
+#ifndef DBUCT_VALUE_MANIFEST_HPP
+#define DBUCT_VALUE_MANIFEST_HPP
 
 #include <cstddef>
 #include <limits>
-#include "dbuct.hpp"
-#include "dbuct_add_value.hpp"
-#include "dbuct_add_visits.hpp"
+#include "dbuct_chooser.hpp"
 #include "dbuct_frame.hpp"
 #include "dbuct_frame_stack.hpp"
 #include "dbuct_frame_stack_controller.hpp"
+#include "dbuct_terminator.hpp"
+#include "dbuct_value_adder.hpp"
+#include "dbuct_value_creditor.hpp"
 #include "dbuct_value_frame.hpp"
 #include "dbuct_value_stack.hpp"
 #include "dbuct_value_stack_controller.hpp"
-#include "dbuct_value_terminator.hpp"
-#include "dbuct_visit_terminator.hpp"
+#include "dbuct_visit_adder.hpp"
+#include "dbuct_visit_creditor.hpp"
 #include "dispatches_table.hpp"
+#include "in_rollout_flag.hpp"
 #include "linear_batch_increment.hpp"
 #include "random_rollout.hpp"
 #include "ucb1.hpp"
@@ -38,51 +40,56 @@ template<
     typename IRndGen,
     template<typename...> typename Map
 >
-struct dbuct_manifest
+struct dbuct_value_manifest
 {
     using rollout_t       = random_rollout<IChoice, IRndGen, IGetChoiceCount, IGetChoiceAt>;
     using exploration_t   = uniform_exploration_constant<IFloat>;
     using delta_t         = uniform_value_delta<IFloat>;
     using dispatches_t    = dispatches_table<INodeHandle, Map>;
     using frame_stack_t   = dbuct_frame_stack<INodeHandle>;
-    using add_visits_t    = dbuct_add_visits<INodeHandle, frame_stack_t,
-                                             IGetVisits, ISetVisits>;
+    using visit_adder_t   = dbuct_visit_adder<INodeHandle, frame_stack_t,
+                                              IGetVisits, ISetVisits>;
     using frame_stack_controller_t
                           = dbuct_frame_stack_controller<INodeHandle,
                                                          frame_stack_t, frame_stack_t,
-                                                         frame_stack_t, add_visits_t>;
+                                                         frame_stack_t, visit_adder_t>;
     using value_stack_t   = dbuct_value_stack<INodeHandle, IFloat>;
-    using add_value_t     = dbuct_add_value<INodeHandle, IFloat, value_stack_t,
-                                            IGetValue, ISetValue>;
+    using value_adder_t   = dbuct_value_adder<INodeHandle, IFloat, value_stack_t,
+                                              IGetValue, ISetValue>;
     using value_stack_controller_t
                           = dbuct_value_stack_controller<INodeHandle, IFloat,
                                                          frame_stack_controller_t,
                                                          frame_stack_controller_t,
                                                          value_stack_t, value_stack_t,
-                                                         value_stack_t, add_value_t>;
-    using visit_terminator_t = dbuct_visit_terminator<add_visits_t>;
-    using value_terminator_t = dbuct_value_terminator<visit_terminator_t, value_stack_t,
-                                                      add_value_t, delta_t>;
+                                                         value_stack_t, value_adder_t>;
+    using visit_creditor_t = dbuct_visit_creditor<visit_adder_t>;
+    using value_creditor_t = dbuct_value_creditor<visit_creditor_t, value_stack_t,
+                                                  value_adder_t, delta_t>;
     using policy_t        = ucb1<INodeHandle, IChoice, IFloat,
                                  IGetVisits, IGetValue, IWalker,
                                  exploration_t, IGetChoiceCount, IGetChoiceAt>;
-    using dbuct_t         = dbuct<INodeHandle, IChoice,
-                                  IGetVisits,
-                                  dispatches_t, dispatches_t, linear_batch_increment,
-                                  value_stack_controller_t, value_stack_controller_t,
-                                  frame_stack_t,
-                                  IWalker,
-                                  IGetChoiceCount, IGetChoiceAt,
-                                  policy_t, rollout_t, value_terminator_t>;
+    using chooser_t       = dbuct_chooser<INodeHandle, IChoice,
+                                          IGetVisits,
+                                          dispatches_t, dispatches_t, linear_batch_increment,
+                                          value_stack_controller_t,
+                                          frame_stack_t,
+                                          IWalker,
+                                          IGetChoiceCount, IGetChoiceAt,
+                                          policy_t, rollout_t,
+                                          in_rollout_flag, in_rollout_flag>;
+    using terminator_t    = dbuct_terminator<value_stack_controller_t,
+                                             frame_stack_t,
+                                             value_creditor_t,
+                                             in_rollout_flag>;
 
-    dbuct_manifest(IGetVisits& get_visits,
-                   ISetVisits& set_visits,
-                   IGetValue&  get_value,
-                   ISetValue&  set_value,
-                   IRndGen&    rnd_gen,
-                   IFloat      exploration_constant,
-                   size_t      grant_increment_interval,
-                   INodeHandle root);
+    dbuct_value_manifest(IGetVisits& get_visits,
+                         ISetVisits& set_visits,
+                         IGetValue&  get_value,
+                         ISetValue&  set_value,
+                         IRndGen&    rnd_gen,
+                         IFloat      exploration_constant,
+                         size_t      grant_increment_interval,
+                         INodeHandle root);
 
     IWalker                   walker;
     rollout_t                 rollout;
@@ -91,22 +98,24 @@ struct dbuct_manifest
     delta_t                   delta;
     dispatches_t              dispatches;
     frame_stack_t             frame_stack;
-    add_visits_t              add_visits;
+    visit_adder_t             visit_adder;
     frame_stack_controller_t  frame_stack_controller;
     value_stack_t             value_stack;
-    add_value_t               add_value;
+    value_adder_t             value_adder;
     value_stack_controller_t  value_stack_controller;
-    visit_terminator_t        visit_terminator;
-    value_terminator_t        value_terminator;
+    visit_creditor_t          visit_creditor;
+    value_creditor_t          value_creditor;
     policy_t                  policy;
-    dbuct_t                   d;
+    in_rollout_flag           in_rollout;
+    chooser_t                 chooser;
+    terminator_t              terminator;
 };
 
 template<typename INH, typename IC, typename IF,
          typename IGVis, typename ISVis, typename IGVal, typename ISVal,
          typename IW, typename IGCC, typename IGCA, typename IRG,
          template<typename...> typename Map>
-dbuct_manifest<INH, IC, IF, IGVis, ISVis, IGVal, ISVal, IW, IGCC, IGCA, IRG, Map>::dbuct_manifest(
+dbuct_value_manifest<INH, IC, IF, IGVis, ISVis, IGVal, ISVal, IW, IGCC, IGCA, IRG, Map>::dbuct_value_manifest(
         IGVis& get_visits,
         ISVis& set_visits,
         IGVal& get_value,
@@ -122,19 +131,21 @@ dbuct_manifest<INH, IC, IF, IGVis, ISVis, IGVal, ISVal, IW, IGCC, IGCA, IRG, Map
     , delta()
     , dispatches()
     , frame_stack(dbuct_frame<INH>(root, std::numeric_limits<size_t>::max()))
-    , add_visits(frame_stack, get_visits, set_visits)
-    , frame_stack_controller(frame_stack, frame_stack, frame_stack, add_visits)
+    , visit_adder(frame_stack, get_visits, set_visits)
+    , frame_stack_controller(frame_stack, frame_stack, frame_stack, visit_adder)
     , value_stack(dbuct_value_frame<INH, IF>(root))
-    , add_value(value_stack, get_value, set_value)
+    , value_adder(value_stack, get_value, set_value)
     , value_stack_controller(frame_stack_controller, frame_stack_controller,
-                             value_stack, value_stack, value_stack, add_value)
-    , visit_terminator(add_visits)
-    , value_terminator(visit_terminator, value_stack, add_value, delta)
+                             value_stack, value_stack, value_stack, value_adder)
+    , visit_creditor(visit_adder)
+    , value_creditor(visit_creditor, value_stack, value_adder, delta)
     , policy(get_visits, get_value, walker, this->exploration_constant)
-    , d(get_visits, dispatches, dispatches, batch,
-        value_stack_controller, value_stack_controller,
-        frame_stack,
-        walker, policy, rollout, value_terminator)
+    , in_rollout()
+    , chooser(get_visits, dispatches, dispatches, batch,
+              value_stack_controller, frame_stack,
+              walker, policy, rollout,
+              in_rollout, in_rollout)
+    , terminator(value_stack_controller, frame_stack, value_creditor, in_rollout)
 {}
 
 }
