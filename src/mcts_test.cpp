@@ -9,8 +9,16 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include <gmock/gmock.h>
 
 #include "mcts.hpp"
+
+using ::testing::_;
+using ::testing::InSequence;
+using ::testing::NiceMock;
+using ::testing::Return;
+using ::testing::ReturnRef;
+using ::testing::StrictMock;
 
 namespace
 {
@@ -1300,100 +1308,724 @@ TEST_F(DbuctCampingLumpTest, LumpInvariantHoldsAcrossGrantPeriods)
 }
 
 // ---------------------------------------------------------------------------
-// DbuctBudgetInvariantTest
-//
-// DISABLED: verifying budget(parent(n)) >= budget(n) during backstep()
-// requires reading each frame's grant budget, which is intentionally not
-// exposed on the public API. Without a budget accessor (or a test-only hook),
-// the invariant cannot be asserted from caller code.
+// DbuctVisitAdderTest
 // ---------------------------------------------------------------------------
-#if 0
-class DbuctBudgetInvariantTest : public ::testing::Test
+struct MockGetTopFrame
+{
+    MOCK_METHOD((monte_carlo::dbuct_frame<int>&), top, (), ());
+};
+
+struct MockGetVisits
+{
+    MOCK_METHOD(size_t, get_visits, (const int&), (const));
+};
+
+struct MockSetVisits
+{
+    MOCK_METHOD(void, set_visits, (const int&, size_t), ());
+};
+
+class DbuctVisitAdderTest : public ::testing::Test
 {
 protected:
-    using visits_t      = monte_carlo::visits_table<int, std::unordered_map>;
-    using value_t       = monte_carlo::value_table<int, double, std::unordered_map>;
-    using dispatches_t  = monte_carlo::dispatches_table<int, std::unordered_map>;
-    using batch_t       = monte_carlo::linear_batch_increment;
-    using rollout_t     = monte_carlo::random_rollout<
-                             jump_t, std::mt19937,
-                             std::vector<jump_t>, std::vector<jump_t>>;
-    using dbuct_t       = monte_carlo::dbuct<
-                             int, jump_t, double,
-                             visits_t, value_t, visits_t, value_t,
-                             dispatches_t, dispatches_t,
-                             batch_t,
-                             position_walker,
-                             std::vector<jump_t>, std::vector<jump_t>,
-                             rollout_t,
-                             monte_carlo::uniform_value_delta<double>,
-                             monte_carlo::uniform_exploration_constant<double>>;
+    monte_carlo::dbuct_frame<int>           frame_{7, 10};
+    NiceMock<MockGetTopFrame>               get_top_frame;
+    NiceMock<MockGetVisits>                 get_visits;
+    StrictMock<MockSetVisits>               set_visits;
+    monte_carlo::dbuct_visit_adder<int,
+                                   MockGetTopFrame,
+                                   MockGetVisits,
+                                   MockSetVisits> sut{get_top_frame, get_visits, set_visits};
+};
 
-    void run_episode(dbuct_t&                   d,
-                     const std::vector<double>& track,
-                     const std::vector<jump_t>& jumps,
-                     std::vector<int>&          path)
+TEST_F(DbuctVisitAdderTest, AddVisitsIncrementsBankAndFrameLump)
+{
+    frame_.visit_lump = 2;
+    ON_CALL(get_top_frame, top()).WillByDefault(ReturnRef(frame_));
+    ON_CALL(get_visits, get_visits(7)).WillByDefault(Return(5));
+    EXPECT_CALL(set_visits, set_visits(7, 8));
+
+    sut.add_visits(3);
+
+    EXPECT_EQ(frame_.visit_lump, 5u);
+}
+
+// ---------------------------------------------------------------------------
+// DbuctValueAdderTest
+// ---------------------------------------------------------------------------
+struct MockGetTopValueFrame
+{
+    MOCK_METHOD((monte_carlo::dbuct_value_frame<int, double>&), top, (), ());
+};
+
+struct MockGetValue
+{
+    MOCK_METHOD(double, get_value, (const int&), (const));
+};
+
+struct MockSetValue
+{
+    MOCK_METHOD(void, set_value, (const int&, double), ());
+};
+
+struct MockAddValue
+{
+    MOCK_METHOD(void, add_value, (double), ());
+};
+
+class DbuctValueAdderTest : public ::testing::Test
+{
+protected:
+    monte_carlo::dbuct_value_frame<int, double> value_frame_{3};
+    NiceMock<MockGetTopValueFrame>              get_top_value_frame;
+    NiceMock<MockGetValue>                      get_value;
+    StrictMock<MockSetValue>                    set_value;
+    monte_carlo::dbuct_value_adder<int, double,
+                                   MockGetTopValueFrame,
+                                   MockGetValue,
+                                   MockSetValue> sut{get_top_value_frame, get_value, set_value};
+};
+
+TEST_F(DbuctValueAdderTest, AddValueIncrementsBankAndFrameLump)
+{
+    value_frame_.value_lump = 1.0;
+    ON_CALL(get_top_value_frame, top()).WillByDefault(ReturnRef(value_frame_));
+    ON_CALL(get_value, get_value(3)).WillByDefault(Return(4.0));
+    EXPECT_CALL(set_value, set_value(3, 6.5));
+
+    sut.add_value(2.5);
+
+    EXPECT_DOUBLE_EQ(value_frame_.value_lump, 3.5);
+}
+
+// ---------------------------------------------------------------------------
+// DbuctVisitCreditorTest
+// ---------------------------------------------------------------------------
+struct MockAddVisits
+{
+    MOCK_METHOD(void, add_visits, (size_t), ());
+};
+
+class DbuctVisitCreditorTest : public ::testing::Test
+{
+protected:
+    StrictMock<MockAddVisits>                    visit_adder;
+    monte_carlo::dbuct_visit_creditor<MockAddVisits> sut{visit_adder};
+};
+
+TEST_F(DbuctVisitCreditorTest, CreditDelegatesSingleVisit)
+{
+    EXPECT_CALL(visit_adder, add_visits(1)).Times(1);
+    sut.credit();
+}
+
+// ---------------------------------------------------------------------------
+// DbuctValueCreditorTest
+// ---------------------------------------------------------------------------
+struct MockCreditVisit
+{
+    MOCK_METHOD(void, credit, (), ());
+};
+
+struct MockGetValueDelta
+{
+    MOCK_METHOD(double, get_value_delta, (const int&), (const));
+};
+
+class DbuctValueCreditorTest : public ::testing::Test
+{
+protected:
+    monte_carlo::dbuct_value_frame<int, double> value_frame_{9};
+    StrictMock<MockCreditVisit>                 visit_creditor;
+    NiceMock<MockGetTopValueFrame>              get_top_value_frame;
+    StrictMock<MockAddValue>                    value_adder;
+    NiceMock<MockGetValueDelta>                 value_delta;
+    monte_carlo::dbuct_value_creditor<MockCreditVisit,
+                                      MockGetTopValueFrame,
+                                      MockAddValue,
+                                      MockGetValueDelta> sut{
+        visit_creditor, get_top_value_frame, value_adder, value_delta};
+};
+
+TEST_F(DbuctValueCreditorTest, CreditVisitsThenAddsDelta)
+{
+    ON_CALL(get_top_value_frame, top()).WillByDefault(ReturnRef(value_frame_));
+    ON_CALL(value_delta, get_value_delta(9)).WillByDefault(Return(2.5));
+
+    InSequence seq;
+    EXPECT_CALL(visit_creditor, credit());
+    EXPECT_CALL(value_adder, add_value(2.5));
+
+    sut.credit();
+}
+
+// ---------------------------------------------------------------------------
+// DbuctTerminatorTest
+// ---------------------------------------------------------------------------
+struct MockBackstep
+{
+    MOCK_METHOD(void, backstep, (), ());
+};
+
+struct MockValueCreditor
+{
+    MOCK_METHOD(void, credit, (), ());
+};
+
+struct MockSetInRollout
+{
+    MOCK_METHOD(void, set_in_rollout, (bool), ());
+};
+
+class DbuctTerminatorTest : public ::testing::Test
+{
+protected:
+    monte_carlo::dbuct_frame<int> frame_{0, 0};
+    NiceMock<MockGetTopFrame>     get_top_frame;
+    StrictMock<MockBackstep>      backstep;
+    StrictMock<MockValueCreditor> value_creditor;
+    StrictMock<MockSetInRollout>  set_in_rollout;
+};
+
+TEST_F(DbuctTerminatorTest, TerminateCreditsThenBackstepsWhileBudgetExhausted)
+{
+    frame_.budget     = 2;
+    frame_.visit_lump = 3;
+    ON_CALL(get_top_frame, top()).WillByDefault(ReturnRef(frame_));
+
+    EXPECT_CALL(value_creditor, credit()).Times(1);
+    EXPECT_CALL(backstep, backstep())
+        .Times(2)
+        .WillOnce([&] { frame_.visit_lump = 2; })
+        .WillOnce([&] { frame_.visit_lump = 0; });
+    EXPECT_CALL(set_in_rollout, set_in_rollout(false)).Times(1);
+
+    monte_carlo::dbuct_terminator<MockBackstep,
+                                  MockGetTopFrame,
+                                  MockValueCreditor,
+                                  MockSetInRollout> sut{
+        backstep, get_top_frame, value_creditor, set_in_rollout};
+
+    sut.terminate();
+}
+
+TEST_F(DbuctTerminatorTest, TerminateSkipsBackstepWhenCamping)
+{
+    frame_.budget     = 3;
+    frame_.visit_lump = 1;
+    ON_CALL(get_top_frame, top()).WillByDefault(ReturnRef(frame_));
+
+    EXPECT_CALL(value_creditor, credit()).Times(1);
+    EXPECT_CALL(backstep, backstep()).Times(0);
+    EXPECT_CALL(set_in_rollout, set_in_rollout(false)).Times(1);
+
+    monte_carlo::dbuct_terminator<MockBackstep,
+                                  MockGetTopFrame,
+                                  MockValueCreditor,
+                                  MockSetInRollout> sut{
+        backstep, get_top_frame, value_creditor, set_in_rollout};
+
+    sut.terminate();
+}
+
+// ---------------------------------------------------------------------------
+// DbuctChooserTest
+// ---------------------------------------------------------------------------
+struct MockGetDispatches
+{
+    MOCK_METHOD(size_t, get_dispatches, (const int&), (const));
+};
+
+struct MockSetDispatches
+{
+    MOCK_METHOD(void, set_dispatches, (const int&, size_t), ());
+};
+
+struct MockComputeBatchSize
+{
+    MOCK_METHOD(size_t, compute_batch_size, (size_t), (const));
+};
+
+struct MockForestep
+{
+    MOCK_METHOD(void, forestep, (const monte_carlo::dbuct_frame<int>&), ());
+};
+
+struct MockPolicyChoose
+{
+    MOCK_METHOD(int, policy_choose, (const int&, const std::vector<jump_t>&, const std::vector<jump_t>&), ());
+};
+
+struct MockRolloutChoose
+{
+    MOCK_METHOD(jump_t, rollout_choose, (const std::vector<jump_t>&, const std::vector<jump_t>&), ());
+};
+
+struct MockGetInRollout
+{
+    MOCK_METHOD(bool, get_in_rollout, (), (const));
+};
+
+struct MockSetInRolloutChooser
+{
+    MOCK_METHOD(void, set_in_rollout, (bool), ());
+};
+
+class DbuctChooserTest : public ::testing::Test
+{
+protected:
+    monte_carlo::dbuct_frame<int> frame_{-1, 100};
+    NiceMock<MockGetVisits>       get_visits;
+    NiceMock<MockGetDispatches>   get_dispatches;
+    StrictMock<MockSetDispatches> set_dispatches;
+    NiceMock<MockComputeBatchSize> compute_batch_size;
+    StrictMock<MockForestep>      forestep;
+    NiceMock<MockGetTopFrame>     get_top_frame;
+    position_walker               walker;
+    StrictMock<MockPolicyChoose>  policy;
+    StrictMock<MockRolloutChoose> rollout;
+    NiceMock<MockGetInRollout>    get_in_rollout;
+    StrictMock<MockSetInRolloutChooser> set_in_rollout;
+    std::vector<jump_t>           jumps_{1};
+
+    monte_carlo::dbuct_chooser<int, jump_t,
+                                 MockGetVisits,
+                                 MockGetDispatches,
+                                 MockSetDispatches,
+                                 MockComputeBatchSize,
+                                 MockForestep,
+                                 MockGetTopFrame,
+                                 position_walker,
+                                 std::vector<jump_t>,
+                                 std::vector<jump_t>,
+                                 MockPolicyChoose,
+                                 MockRolloutChoose,
+                                 MockGetInRollout,
+                                 MockSetInRolloutChooser> sut{
+        get_visits,
+        get_dispatches,
+        set_dispatches,
+        compute_batch_size,
+        forestep,
+        get_top_frame,
+        walker,
+        policy,
+        rollout,
+        get_in_rollout,
+        set_in_rollout};
+
+    void expect_tree_frame()
+    {
+        ON_CALL(get_top_frame, top()).WillByDefault(ReturnRef(frame_));
+    }
+};
+
+TEST_F(DbuctChooserTest, RolloutPhaseDelegatesToRolloutChoose)
+{
+    ON_CALL(get_in_rollout, get_in_rollout()).WillByDefault(Return(true));
+    EXPECT_CALL(rollout, rollout_choose(jumps_, jumps_)).WillOnce(Return(jump_t{1}));
+    EXPECT_CALL(policy, policy_choose(_, _, _)).Times(0);
+    EXPECT_CALL(forestep, forestep(_)).Times(0);
+
+    EXPECT_EQ(sut.choose(jumps_, jumps_), 1);
+}
+
+TEST_F(DbuctChooserTest, TreePhaseDispatchesAndForesteps)
+{
+    expect_tree_frame();
+    ON_CALL(get_in_rollout, get_in_rollout()).WillByDefault(Return(false));
+    ON_CALL(get_dispatches, get_dispatches(-1)).WillByDefault(Return(0));
+    ON_CALL(compute_batch_size, compute_batch_size(0)).WillByDefault(Return(5));
+    ON_CALL(get_visits, get_visits(0)).WillByDefault(Return(5));
+
+    EXPECT_CALL(policy, policy_choose(-1, jumps_, jumps_)).WillOnce(Return(1));
+    EXPECT_CALL(set_dispatches, set_dispatches(-1, 1));
+    EXPECT_CALL(forestep, forestep(_));
+    EXPECT_CALL(rollout, rollout_choose(_, _)).Times(0);
+    EXPECT_CALL(set_in_rollout, set_in_rollout(true)).Times(0);
+
+    EXPECT_EQ(sut.choose(jumps_, jumps_), 1);
+}
+
+TEST_F(DbuctChooserTest, TreePhaseEntersRolloutOnUnvisitedChild)
+{
+    expect_tree_frame();
+    ON_CALL(get_in_rollout, get_in_rollout()).WillByDefault(Return(false));
+    ON_CALL(get_dispatches, get_dispatches(-1)).WillByDefault(Return(0));
+    ON_CALL(compute_batch_size, compute_batch_size(0)).WillByDefault(Return(5));
+    ON_CALL(get_visits, get_visits(0)).WillByDefault(Return(0));
+
+    EXPECT_CALL(policy, policy_choose(-1, jumps_, jumps_)).WillOnce(Return(1));
+    EXPECT_CALL(set_dispatches, set_dispatches(-1, 1));
+    EXPECT_CALL(forestep, forestep(_));
+    EXPECT_CALL(set_in_rollout, set_in_rollout(true)).Times(1);
+
+    EXPECT_EQ(sut.choose(jumps_, jumps_), 1);
+}
+
+// ---------------------------------------------------------------------------
+// UniformValueUpdateTest
+// ---------------------------------------------------------------------------
+class UniformValueUpdateTest : public ::testing::Test
+{
+protected:
+    NiceMock<MockGetValue>      get_value;
+    StrictMock<MockSetValue>    set_value;
+    NiceMock<MockGetValueDelta> value_delta;
+    monte_carlo::uniform_value_update<int,
+                                      MockGetValue,
+                                      MockSetValue,
+                                      MockGetValueDelta> sut{
+        get_value, set_value, value_delta};
+};
+
+TEST_F(UniformValueUpdateTest, UpdateAddsDeltaToCurrentValue)
+{
+    ON_CALL(get_value, get_value(42)).WillByDefault(Return(1.0));
+    ON_CALL(value_delta, get_value_delta(42)).WillByDefault(Return(0.5));
+    EXPECT_CALL(set_value, set_value(42, 1.5));
+
+    sut.update(42);
+}
+
+// ---------------------------------------------------------------------------
+// Ucb1Test
+// ---------------------------------------------------------------------------
+struct stub_choice_count
+{
+    size_t size() const { return 2; }
+};
+
+struct stub_choice_at
+{
+    int at(size_t i) const { return static_cast<int>(i); }
+};
+
+struct MockUcbWalker
+{
+    MOCK_METHOD(int, walk, (const int&, int), (const));
+};
+
+struct MockGetExplorationConstant
+{
+    MOCK_METHOD(double, get_exploration_constant, (const int&), (const));
+};
+
+class Ucb1Test : public ::testing::Test
+{
+protected:
+    NiceMock<MockGetVisits>               get_visits;
+    NiceMock<MockGetValue>                get_value;
+    NiceMock<MockUcbWalker>               walker;
+    monte_carlo::uniform_exploration_constant<double> exploration{0.0};
+    monte_carlo::ucb1<int, int, double,
+                        MockGetVisits,
+                        MockGetValue,
+                        MockUcbWalker,
+                        monte_carlo::uniform_exploration_constant<double>,
+                        stub_choice_count,
+                        stub_choice_at> sut{
+        get_visits, get_value, walker, exploration};
+};
+
+TEST_F(Ucb1Test, PicksHighestValuePerVisitRatio)
+{
+    const int parent = 99;
+    ON_CALL(get_visits, get_visits(parent)).WillByDefault(Return(10));
+    ON_CALL(walker, walk(parent, 0)).WillByDefault(Return(0));
+    ON_CALL(walker, walk(parent, 1)).WillByDefault(Return(1));
+    ON_CALL(get_visits, get_visits(0)).WillByDefault(Return(3));
+    ON_CALL(get_visits, get_visits(1)).WillByDefault(Return(2));
+    ON_CALL(get_value, get_value(0)).WillByDefault(Return(6.0));
+    ON_CALL(get_value, get_value(1)).WillByDefault(Return(10.0));
+
+    stub_choice_count count;
+    stub_choice_at    at;
+
+    EXPECT_EQ(sut.policy_choose(parent, count, at), 1);
+}
+
+// ---------------------------------------------------------------------------
+// SimInRolloutTest
+// ---------------------------------------------------------------------------
+class SimInRolloutTest : public ::testing::Test
+{
+protected:
+    using visits_t   = monte_carlo::visits_table<int, std::unordered_map>;
+    using value_t    = monte_carlo::value_table<int, double, std::unordered_map>;
+    using manifest_t = monte_carlo::sim_manifest<
+                          int, jump_t, double,
+                          visits_t, visits_t, value_t, value_t,
+                          position_walker,
+                          std::vector<jump_t>, std::vector<jump_t>,
+                          std::mt19937>;
+};
+
+TEST_F(SimInRolloutTest, FlagTransitionsEpisodes1And2)
+{
+    const std::vector<double> track = {5.0};
+    const std::vector<jump_t> jumps = {1};
+    std::mt19937              rng(0);
+    visits_t                  visits;
+    value_t                   value;
+
+    {
+        manifest_t m(visits, visits, value, value, rng, 1.0, -1);
+
+        EXPECT_FALSE(m.in_rollout.get_in_rollout());
+
+        m.s.choose(jumps, jumps);
+        EXPECT_TRUE(m.in_rollout.get_in_rollout());
+
+        m.s.choose(jumps, jumps);
+        EXPECT_TRUE(m.in_rollout.get_in_rollout());
+
+        m.delta.set_value(5.0);
+        m.s.terminate();
+        EXPECT_FALSE(m.in_rollout.get_in_rollout());
+    }
+
+    {
+        manifest_t m(visits, visits, value, value, rng, 1.0, -1);
+
+        EXPECT_FALSE(m.in_rollout.get_in_rollout());
+
+        m.s.choose(jumps, jumps);
+        EXPECT_FALSE(m.in_rollout.get_in_rollout());
+
+        m.s.choose(jumps, jumps);
+        EXPECT_TRUE(m.in_rollout.get_in_rollout());
+
+        m.delta.set_value(5.0);
+        m.s.terminate();
+        EXPECT_FALSE(m.in_rollout.get_in_rollout());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SimTerminateBackpropTest
+// ---------------------------------------------------------------------------
+class SimTerminateBackpropTest : public ::testing::Test
+{
+protected:
+    using visits_t   = monte_carlo::visits_table<int, std::unordered_map>;
+    using value_t    = monte_carlo::value_table<int, double, std::unordered_map>;
+    using manifest_t = monte_carlo::sim_manifest<
+                          int, jump_t, double,
+                          visits_t, visits_t, value_t, value_t,
+                          position_walker,
+                          std::vector<jump_t>, std::vector<jump_t>,
+                          std::mt19937>;
+
+    void run_terminal_episode(manifest_t& m, const std::vector<jump_t>& jumps)
+    {
+        int    position = -1;
+        double reward   = 0.0;
+
+        while (true)
+        {
+            jump_t chosen = m.s.choose(jumps, jumps);
+            int    next   = position + chosen;
+            if (next >= 3)
+            {
+                m.delta.set_value(reward);
+                m.s.terminate();
+                return;
+            }
+            position = next;
+            reward   = static_cast<double>(next + 1);
+        }
+    }
+};
+
+TEST_F(SimTerminateBackpropTest, CreditsEveryNodeOnBackpropPath)
+{
+    const std::vector<jump_t> jumps = {1};
+    std::mt19937              rng(0);
+    visits_t                  visits;
+    value_t                   value;
+
+    manifest_t m(visits, visits, value, value, rng, 0.0, -1);
+
+    run_terminal_episode(m, jumps);
+
+    EXPECT_EQ(visits.get_visits(-1), 1u);
+    EXPECT_EQ(visits.get_visits(0), 1u);
+    EXPECT_DOUBLE_EQ(value.get_value(-1), 3.0);
+    EXPECT_DOUBLE_EQ(value.get_value(0), 3.0);
+}
+
+// ---------------------------------------------------------------------------
+// DbuctStackLockstepTest
+// ---------------------------------------------------------------------------
+class DbuctStackLockstepTest : public ::testing::Test
+{
+protected:
+    using visits_t   = monte_carlo::visits_table<int, std::unordered_map>;
+    using value_t    = monte_carlo::value_table<int, double, std::unordered_map>;
+    using manifest_t = monte_carlo::dbuct_value_manifest<
+                          int, jump_t, double,
+                          visits_t, visits_t, value_t, value_t,
+                          position_walker,
+                          std::vector<jump_t>, std::vector<jump_t>,
+                          std::mt19937, std::unordered_map>;
+
+    void run_episode(manifest_t& m, const std::vector<jump_t>& jumps)
+    {
+        int    position = -1;
+        double reward   = 0.0;
+
+        while (true)
+        {
+            jump_t chosen = m.chooser.choose(jumps, jumps);
+            int    next   = position + chosen;
+            if (!m.in_rollout.get_in_rollout())
+                EXPECT_EQ(m.frame_stack.top().handle, m.value_stack.top().handle);
+            if (next >= 1)
+            {
+                m.delta.set_value(reward);
+                m.terminator.terminate();
+                return;
+            }
+            position = next;
+            reward   = 1.0;
+        }
+    }
+};
+
+TEST_F(DbuctStackLockstepTest, FrameAndValueStacksShareTopHandle)
+{
+    const std::vector<jump_t> jumps = {1};
+    std::mt19937              rng(42);
+    visits_t                  visits;
+    value_t                   value;
+
+    manifest_t m(visits, visits, value, value, rng, 0.0, 2, -1);
+
+    run_episode(m, jumps);
+    run_episode(m, jumps);
+    run_episode(m, jumps);
+
+    EXPECT_EQ(m.frame_stack.size(), 2u);
+    EXPECT_EQ(m.frame_stack.top().handle, 0);
+    EXPECT_EQ(m.value_stack.top().handle, 0);
+}
+
+// ---------------------------------------------------------------------------
+// DbuctSingleEpisodeCreditTest
+// ---------------------------------------------------------------------------
+class DbuctSingleEpisodeCreditTest : public ::testing::Test
+{
+protected:
+    using visits_t   = monte_carlo::visits_table<int, std::unordered_map>;
+    using value_t    = monte_carlo::value_table<int, double, std::unordered_map>;
+    using manifest_t = monte_carlo::dbuct_value_manifest<
+                          int, jump_t, double,
+                          visits_t, visits_t, value_t, value_t,
+                          position_walker,
+                          std::vector<jump_t>, std::vector<jump_t>,
+                          std::mt19937, std::unordered_map>;
+};
+
+TEST_F(DbuctSingleEpisodeCreditTest, SeedEpisodeCreditsExpansionNodeAndRoot)
+{
+    const std::vector<jump_t> jumps = {1};
+    std::mt19937              rng(0);
+    visits_t                  visits;
+    value_t                   value;
+
+    manifest_t m(visits, visits, value, value, rng, 1.0,
+                 std::numeric_limits<size_t>::max(), -1);
+
+    m.chooser.choose(jumps, jumps);
+    m.chooser.choose(jumps, jumps);
+    m.delta.set_value(8.0);
+    m.terminator.terminate();
+
+    EXPECT_EQ(visits.get_visits(-1), 1u);
+    EXPECT_EQ(visits.get_visits(0), 1u);
+    EXPECT_DOUBLE_EQ(value.get_value(-1), 8.0);
+    EXPECT_DOUBLE_EQ(value.get_value(0), 8.0);
+}
+
+// ---------------------------------------------------------------------------
+// DbuctManualBackstepValueLumpTest
+// ---------------------------------------------------------------------------
+class DbuctManualBackstepValueLumpTest : public ::testing::Test
+{
+protected:
+    using visits_t   = monte_carlo::visits_table<int, std::unordered_map>;
+    using value_t    = monte_carlo::value_table<int, double, std::unordered_map>;
+    using manifest_t = monte_carlo::dbuct_value_manifest<
+                          int, jump_t, double,
+                          visits_t, visits_t, value_t, value_t,
+                          position_walker,
+                          std::vector<jump_t>, std::vector<jump_t>,
+                          std::mt19937, std::unordered_map>;
+
+    void run_episode(manifest_t& m, const std::vector<jump_t>& jumps, std::vector<int>& path)
     {
         int    position = path.back();
         double reward   = 0.0;
 
         while (true)
         {
-            jump_t chosen = d.choose(jumps, jumps);
+            jump_t chosen = m.chooser.choose(jumps, jumps);
             int    next   = position + chosen;
-            if (!d.in_rollout())
+            if (!m.in_rollout.get_in_rollout())
                 path.push_back(next);
-            if (next >= static_cast<int>(track.size()))
+            if (next >= 1)
             {
-                d.terminate(reward);
-                path.resize(d.depth());
+                m.delta.set_value(reward);
+                m.terminator.terminate();
+                path.resize(m.frame_stack.size());
                 return;
             }
             position = next;
-            reward   = track[position];
-        }
-    }
-
-    void backstep_to_root_asserting_invariant(dbuct_t& d, std::vector<int>& path)
-    {
-        while (d.depth() > 1)
-        {
-            const size_t child_budget = d.budget();
-            d.backstep();
-            EXPECT_GE(d.budget(), child_budget)
-                << "budget(parent) >= budget(child) violated at depth=" << d.depth();
-            path.resize(d.depth());
+            reward   = 1.0;
         }
     }
 };
 
-TEST_F(DbuctBudgetInvariantTest, ParentBudgetGteChildBudgetAcrossLongRun)
+TEST_F(DbuctManualBackstepValueLumpTest, ManualBackstepRollsValueLumpIntoRoot)
 {
-    const std::vector<double> track = {3.0, -1.0, 4.0, -2.0, 5.0, 1.0, 2.0, -3.0, 7.0, 0.5};
-    const std::vector<jump_t> jumps = {1, 2, 3};
-    const size_t              GII   = 3;
-    std::mt19937              rng(77);
+    const std::vector<jump_t> jumps = {1};
+    std::mt19937              rng(42);
     visits_t                  visits;
     value_t                   value;
-    dispatches_t              dispatches;
-    batch_t                   batch(GII);
-    rollout_t                 rollout(rng);
-    position_walker           walker;
 
-    dbuct_t d(visits, value, visits, value, dispatches, dispatches, batch,
-              walker, rollout, -1, 1.5);
-
+    manifest_t m(visits, visits, value, value, rng, 0.0, 2, -1);
     std::vector<int> path = {-1};
 
-    for (int i = 0; i < 10000; ++i)
-        run_episode(d, track, jumps, path);
+    run_episode(m, jumps, path);
+    run_episode(m, jumps, path);
 
-    for (int i = 0; i < 1000; ++i)
+    const double root_value_before = value.get_value(-1);
+
     {
-        run_episode(d, track, jumps, path);
-        backstep_to_root_asserting_invariant(d, path);
-        EXPECT_EQ(d.depth(), 1u);
-        EXPECT_EQ(path, std::vector<int>({-1}));
+        int    position = path.back();
+        double reward   = 0.0;
+
+        while (true)
+        {
+            jump_t chosen = m.chooser.choose(jumps, jumps);
+            int    next   = position + chosen;
+            if (!m.in_rollout.get_in_rollout())
+                path.push_back(next);
+            if (next >= 1)
+            {
+                m.delta.set_value(reward);
+                m.terminator.terminate();
+                while (m.frame_stack.size() > 1)
+                    m.value_stack_controller.backstep();
+                path.resize(m.frame_stack.size());
+                break;
+            }
+            position = next;
+            reward   = 1.0;
+        }
     }
+
+    EXPECT_EQ(m.frame_stack.size(), 1u);
+    EXPECT_DOUBLE_EQ(value.get_value(-1) - root_value_before, 1.0);
 }
-#endif

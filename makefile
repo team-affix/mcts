@@ -1,6 +1,9 @@
 GTEST_DIR := googletest
-GTEST_INCLUDES := -I$(GTEST_DIR)/googletest/include -I$(GTEST_DIR)/googletest
-GTEST_SRCS := $(GTEST_DIR)/googletest/src/gtest-all.cc $(GTEST_DIR)/googletest/src/gtest_main.cc
+GTEST_INCLUDES := -I$(GTEST_DIR)/googletest/include -I$(GTEST_DIR)/googletest \
+                  -I$(GTEST_DIR)/googlemock/include -I$(GTEST_DIR)/googlemock
+GTEST_SRCS := $(GTEST_DIR)/googletest/src/gtest-all.cc \
+              $(GTEST_DIR)/googletest/src/gtest_main.cc \
+              $(GTEST_DIR)/googlemock/src/gmock-all.cc
 
 CXXFLAGS := -g -O2 -std=c++20 -I./include $(GTEST_INCLUDES)
 LDFLAGS := -pthread
