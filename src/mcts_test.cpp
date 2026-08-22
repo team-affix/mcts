@@ -1467,7 +1467,7 @@ struct MockBackstep
     MOCK_METHOD(void, backstep, (), ());
 };
 
-struct MockValueCreditor
+struct MockCreditor
 {
     MOCK_METHOD(void, credit, (), ());
 };
@@ -1483,7 +1483,7 @@ protected:
     monte_carlo::dbuct_frame<int> frame_{0, 0};
     NiceMock<MockGetTopFrame>     get_top_frame;
     StrictMock<MockBackstep>      backstep;
-    StrictMock<MockValueCreditor> value_creditor;
+    StrictMock<MockCreditor>      creditor;
     StrictMock<MockExitRollout>   exit_rollout;
 };
 
@@ -1493,7 +1493,7 @@ TEST_F(DbuctTerminatorTest, TerminateCreditsThenBackstepsWhileBudgetExhausted)
     frame_.visit_lump = 3;
     ON_CALL(get_top_frame, top()).WillByDefault(ReturnRef(frame_));
 
-    EXPECT_CALL(value_creditor, credit()).Times(1);
+    EXPECT_CALL(creditor, credit()).Times(1);
     EXPECT_CALL(backstep, backstep())
         .Times(2)
         .WillOnce([&] { frame_.visit_lump = 2; })
@@ -1502,9 +1502,9 @@ TEST_F(DbuctTerminatorTest, TerminateCreditsThenBackstepsWhileBudgetExhausted)
 
     monte_carlo::dbuct_terminator<MockBackstep,
                                   MockGetTopFrame,
-                                  MockValueCreditor,
+                                  MockCreditor,
                                   MockExitRollout> sut{
-        backstep, get_top_frame, value_creditor, exit_rollout};
+        backstep, get_top_frame, creditor, exit_rollout};
 
     sut.terminate();
 }
@@ -1515,15 +1515,15 @@ TEST_F(DbuctTerminatorTest, TerminateSkipsBackstepWhenCamping)
     frame_.visit_lump = 1;
     ON_CALL(get_top_frame, top()).WillByDefault(ReturnRef(frame_));
 
-    EXPECT_CALL(value_creditor, credit()).Times(1);
+    EXPECT_CALL(creditor, credit()).Times(1);
     EXPECT_CALL(backstep, backstep()).Times(0);
     EXPECT_CALL(exit_rollout, exit_rollout()).Times(1);
 
     monte_carlo::dbuct_terminator<MockBackstep,
                                   MockGetTopFrame,
-                                  MockValueCreditor,
+                                  MockCreditor,
                                   MockExitRollout> sut{
-        backstep, get_top_frame, value_creditor, exit_rollout};
+        backstep, get_top_frame, creditor, exit_rollout};
 
     sut.terminate();
 }
@@ -1800,32 +1800,36 @@ TEST_F(UctBackpropPathTest, PushThenPopUnwindsInReverseOrder)
 // ---------------------------------------------------------------------------
 // UctVisitCreditorTest
 // ---------------------------------------------------------------------------
+struct MockGetTopNode
+{
+    MOCK_METHOD(int, top, (), (const));
+};
+
 class UctVisitCreditorTest : public ::testing::Test
 {
 protected:
+    NiceMock<MockGetTopNode>  get_top_node;
     NiceMock<MockGetVisits>   get_visits;
     StrictMock<MockSetVisits> set_visits;
     monte_carlo::uct_visit_creditor<int,
+                                    MockGetTopNode,
                                     MockGetVisits,
-                                    MockSetVisits> sut{get_visits, set_visits};
+                                    MockSetVisits> sut{
+        get_top_node, get_visits, set_visits};
 };
 
-TEST_F(UctVisitCreditorTest, CreditWritesBackOneMoreVisit)
+TEST_F(UctVisitCreditorTest, CreditWritesBackOneMoreVisitForTopNode)
 {
+    ON_CALL(get_top_node, top()).WillByDefault(Return(7));
     ON_CALL(get_visits, get_visits(7)).WillByDefault(Return(4));
     EXPECT_CALL(set_visits, set_visits(7, 5));
 
-    sut.credit(7);
+    sut.credit();
 }
 
 // ---------------------------------------------------------------------------
 // UctValueCreditorTest
 // ---------------------------------------------------------------------------
-struct MockCreditVisitNode
-{
-    MOCK_METHOD(void, credit, (const int&), ());
-};
-
 struct MockUpdateNode
 {
     MOCK_METHOD(void, update, (const int&), ());
@@ -1834,20 +1838,24 @@ struct MockUpdateNode
 class UctValueCreditorTest : public ::testing::Test
 {
 protected:
-    StrictMock<MockCreditVisitNode> visit_creditor;
+    StrictMock<MockCreditVisit>     visit_creditor;
+    NiceMock<MockGetTopNode>        get_top_node;
     StrictMock<MockUpdateNode>      update_node;
-    monte_carlo::uct_value_creditor<int,
-                                    MockCreditVisitNode,
-                                    MockUpdateNode> sut{visit_creditor, update_node};
+    monte_carlo::uct_value_creditor<MockCreditVisit,
+                                    MockGetTopNode,
+                                    MockUpdateNode> sut{
+        visit_creditor, get_top_node, update_node};
 };
 
-TEST_F(UctValueCreditorTest, CreditVisitsThenUpdatesValueForSameNode)
+TEST_F(UctValueCreditorTest, CreditVisitsThenUpdatesValueForTopNode)
 {
+    ON_CALL(get_top_node, top()).WillByDefault(Return(7));
+
     InSequence seq;
-    EXPECT_CALL(visit_creditor, credit(7));
+    EXPECT_CALL(visit_creditor, credit());
     EXPECT_CALL(update_node, update(7));
 
-    sut.credit(7);
+    sut.credit();
 }
 
 // ---------------------------------------------------------------------------
@@ -1956,19 +1964,9 @@ struct MockGetNodeCount
     MOCK_METHOD(size_t, size, (), (const));
 };
 
-struct MockGetTopNode
-{
-    MOCK_METHOD(int, top, (), (const));
-};
-
 struct MockPopNode
 {
     MOCK_METHOD(void, pop, (), ());
-};
-
-struct MockCreditNode
-{
-    MOCK_METHOD(void, credit, (const int&), ());
 };
 
 class UctTerminatorTest : public ::testing::Test
@@ -1977,34 +1975,30 @@ protected:
     static constexpr int kRoot = -1;
 
     StrictMock<MockGetNodeCount>   get_node_count;
-    StrictMock<MockGetTopNode>     get_top_node;
+    StrictMock<MockCreditor>       creditor;
     StrictMock<MockPopNode>        pop_node;
     StrictMock<MockPushNode>       push_node;
-    StrictMock<MockCreditNode>     credit_node;
     StrictMock<MockSetCurrentNode> set_current_node;
     StrictMock<MockExitRollout>    exit_rollout;
     monte_carlo::uct_terminator<int,
                                 MockGetNodeCount,
-                                MockGetTopNode,
+                                MockCreditor,
                                 MockPopNode,
                                 MockPushNode,
-                                MockCreditNode,
                                 MockSetCurrentNode,
                                 MockExitRollout> sut{
-        get_node_count, get_top_node, pop_node, push_node,
-        credit_node, set_current_node, exit_rollout, kRoot};
+        get_node_count, creditor, pop_node, push_node,
+        set_current_node, exit_rollout, kRoot};
 };
 
-TEST_F(UctTerminatorTest, TerminateDrainsPathLeafFirstThenRestoresRoot)
+TEST_F(UctTerminatorTest, TerminateCreditsAndPopsEachNodeThenRestoresRoot)
 {
     InSequence seq;
     EXPECT_CALL(get_node_count, size()).WillOnce(Return(2));
-    EXPECT_CALL(get_top_node, top()).WillOnce(Return(7));
-    EXPECT_CALL(credit_node, credit(7));
+    EXPECT_CALL(creditor, credit());
     EXPECT_CALL(pop_node, pop());
     EXPECT_CALL(get_node_count, size()).WillOnce(Return(1));
-    EXPECT_CALL(get_top_node, top()).WillOnce(Return(3));
-    EXPECT_CALL(credit_node, credit(3));
+    EXPECT_CALL(creditor, credit());
     EXPECT_CALL(pop_node, pop());
     EXPECT_CALL(get_node_count, size()).WillOnce(Return(0));
     EXPECT_CALL(push_node, push(kRoot));
@@ -2017,7 +2011,7 @@ TEST_F(UctTerminatorTest, TerminateDrainsPathLeafFirstThenRestoresRoot)
 TEST_F(UctTerminatorTest, TerminateOnEmptyPathStillRestoresRoot)
 {
     EXPECT_CALL(get_node_count, size()).WillOnce(Return(0));
-    EXPECT_CALL(credit_node, credit(_)).Times(0);
+    EXPECT_CALL(creditor, credit()).Times(0);
     EXPECT_CALL(pop_node, pop()).Times(0);
     EXPECT_CALL(push_node, push(kRoot));
     EXPECT_CALL(set_current_node, set_current_node(kRoot));

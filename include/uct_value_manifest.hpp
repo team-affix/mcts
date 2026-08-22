@@ -38,8 +38,8 @@ struct uct_value_manifest
     using value_update_t   = uniform_value_update<INodeHandle, IGetValue, ISetValue, delta_t>;
     using cursor_t         = uct_cursor<INodeHandle>;
     using path_t           = uct_backprop_path<INodeHandle>;
-    using visit_creditor_t = uct_visit_creditor<INodeHandle, IGetVisits, ISetVisits>;
-    using value_creditor_t = uct_value_creditor<INodeHandle, visit_creditor_t, value_update_t>;
+    using visit_creditor_t = uct_visit_creditor<INodeHandle, path_t, IGetVisits, ISetVisits>;
+    using value_creditor_t = uct_value_creditor<visit_creditor_t, path_t, value_update_t>;
     using policy_t         = ucb1<INodeHandle, IChoice, IFloat,
                                   IGetVisits, IGetValue, IWalker,
                                   exploration_t, IGetChoiceCount, IGetChoiceAt>;
@@ -49,8 +49,9 @@ struct uct_value_manifest
                                          cursor_t, cursor_t, path_t,
                                          in_rollout_flag, in_rollout_flag>;
     using terminator_t     = uct_terminator<INodeHandle,
-                                            path_t, path_t, path_t, path_t,
+                                            path_t,
                                             value_creditor_t,
+                                            path_t, path_t,
                                             cursor_t,
                                             in_rollout_flag>;
 
@@ -95,15 +96,15 @@ uct_value_manifest<INH, IC, IF, IGVis, ISVis, IGVal, ISVal, IW, IGCC, IGCA, IRG>
     , value_update(get_value, set_value, delta)
     , cursor(root)
     , backprop_path(root)
-    , visit_creditor(get_visits, set_visits)
-    , value_creditor(visit_creditor, value_update)
+    , visit_creditor(backprop_path, get_visits, set_visits)
+    , value_creditor(visit_creditor, backprop_path, value_update)
     , policy(get_visits, get_value, walker, this->exploration_constant)
     , in_rollout()
     , chooser(get_visits, walker, policy, rollout,
               cursor, cursor, backprop_path,
               in_rollout, in_rollout)
-    , terminator(backprop_path, backprop_path, backprop_path, backprop_path,
-                 value_creditor, cursor, in_rollout, root)
+    , terminator(backprop_path, value_creditor, backprop_path, backprop_path,
+                 cursor, in_rollout, root)
 {}
 
 }
