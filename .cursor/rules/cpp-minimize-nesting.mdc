@@ -1,0 +1,41 @@
+---
+description: Minimize nesting — prefer smaller sum of indentation across lines
+globs: **/*.{hpp,cpp}
+alwaysApply: true
+---
+
+# Minimize Nesting
+
+Prefer the shape that minimizes the **sum of indentation levels over all
+lines** in a function (or contiguous block). Deep nests for the common path
+are worse than flat early exits for the rare paths.
+
+Typical move: invert the condition and **return early** (or continue) so the
+main logic sits at lower indent.
+
+```cpp
+// BAD — common path buried; high indent sum
+if(const val::clo* closure = std::get_if<val::clo>(&f.slot->content)) {
+    const expr* term = closure->term;
+    if(std::get_if<expr::abs>(&term->content) != nullptr)
+        return std::nullopt;
+    // …more nested work…
+}
+if(std::get_if<val::fvar>(&f.slot->content) != nullptr)
+    return std::nullopt;
+return std::nullopt;
+
+// GOOD — bail out of the odd cases; main path stays shallow
+if(std::get_if<val::fvar>(&f.slot->content) != nullptr)
+    return std::nullopt;
+if(std::holds_alternative<val::napp>(f.slot->content))
+    return std::nullopt;
+auto& closure = std::get<val::clo>(f.slot->content);
+const expr* term = closure.term;
+if(std::get_if<expr::abs>(&term->content) != nullptr)
+    return std::nullopt;
+// …main work at low indent…
+```
+
+Do not add abstraction just to “flatten” indent. Prefer guard clauses and
+inverted conditions first.
