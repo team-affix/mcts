@@ -1,9 +1,9 @@
 #ifndef DBUCT_HPP
 #define DBUCT_HPP
 
-#include <cmath>
-#include <limits>
-#include <stack>
+#include <algorithm>
+#include <cstddef>
+#include "dbuct_frame.hpp"
 
 namespace monte_carlo
 {
@@ -11,158 +11,104 @@ namespace monte_carlo
 template<
     typename INodeHandle,
     typename IChoice,
-    typename IFloat,
     typename IGetVisits,
-    typename IGetValue,
-    typename ISetVisits,
-    typename ISetValue,
     typename IGetDispatches,
     typename ISetDispatches,
     typename IComputeBatchSize,
+    typename IForestep,
+    typename IBackstep,
+    typename IGetTopFrame,
     typename IWalker,
     typename IGetChoiceCount,
     typename IGetChoiceAt,
+    typename IPolicyChoose,
     typename IRolloutChoose,
-    typename IGetValueDelta,
-    typename IGetExplorationConstant
+    typename ITerminate
 >
 struct dbuct
 {
-    dbuct(IGetVisits&              get_visits,
-          IGetValue&               get_value,
-          ISetVisits&              set_visits,
-          ISetValue&               set_value,
-          IGetDispatches&          get_dispatches,
-          ISetDispatches&          set_dispatches,
-          IComputeBatchSize&       compute_batch_size,
-          IWalker&                 walker,
-          IRolloutChoose&          rollout,
-          IGetValueDelta&          value_delta,
-          IGetExplorationConstant& get_exploration_constant,
-          INodeHandle              root);
+    dbuct(IGetVisits&        get_visits,
+          IGetDispatches&    get_dispatches,
+          ISetDispatches&    set_dispatches,
+          IComputeBatchSize& compute_batch_size,
+          IForestep&         forestep,
+          IBackstep&         backstep,
+          IGetTopFrame&      get_top_frame,
+          IWalker&           walker,
+          IPolicyChoose&     policy,
+          IRolloutChoose&    rollout,
+          ITerminate&        terminate);
 
     IChoice choose(const IGetChoiceCount& get_choice_count,
                    const IGetChoiceAt&    get_choice_at);
 
-    void terminate();
+    void terminate_and_backtrack();
 
-    void backstep();
-
-    size_t depth() const { return stack_.size(); }
-    bool   in_rollout() const { return in_rollout_; }
+    bool in_rollout() const;
 
 private:
-    struct frame
-    {
-        INodeHandle handle;
-        size_t      budget;
-        size_t      visit_lump;
-        IFloat      value_lump;
-    };
+    IGetVisits&        get_visits_;
+    IGetDispatches&    get_dispatches_;
+    ISetDispatches&    set_dispatches_;
+    IComputeBatchSize& compute_batch_size_;
+    IForestep&         forestep_;
+    IBackstep&         backstep_;
+    IGetTopFrame&      get_top_frame_;
+    IWalker&           walker_;
+    IPolicyChoose&     policy_;
+    IRolloutChoose&    rollout_;
+    ITerminate&        terminate_;
 
-    IGetVisits&              get_visits_;
-    IGetValue&               get_value_;
-    ISetVisits&              set_visits_;
-    ISetValue&               set_value_;
-    IGetDispatches&          get_dispatches_;
-    ISetDispatches&          set_dispatches_;
-    IComputeBatchSize&       compute_batch_size_;
-    IWalker&                 walker_;
-    IRolloutChoose&          rollout_;
-    IGetValueDelta&          value_delta_;
-    IGetExplorationConstant& get_exploration_constant_;
-
-    std::stack<frame> stack_;
-    bool              in_rollout_;
-
-    void add_visits(size_t v);
-    void add_value(IFloat l);
+    bool in_rollout_;
 };
 
-// Legend: INH=INodeHandle, IC=IChoice, IF=IFloat, IGVis=IGetVisits, IGVal=IGetValue,
-//         ISVis=ISetVisits, ISVal=ISetValue, IGD=IGetDispatches, ISD=ISetDispatches,
-//         IBS=IComputeBatchSize, IW=IWalker, IGCC=IGetChoiceCount, IGCA=IGetChoiceAt,
-//         IRC=IRolloutChoose, IGVD=IGetValueDelta, IGEC=IGetExplorationConstant
-
-template<typename INH, typename IC, typename IF,
-         typename IGVis, typename IGVal, typename ISVis, typename ISVal,
+template<typename INH, typename IC, typename IGVis,
          typename IGD, typename ISD, typename IBS,
-         typename IW, typename IGCC, typename IGCA, typename IRC, typename IGVD, typename IGEC>
-dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IRC, IGVD, IGEC>::dbuct(
+         typename IFo, typename IBa, typename IGTF,
+         typename IW, typename IGCC, typename IGCA,
+         typename IPC, typename IRC, typename IT>
+dbuct<INH, IC, IGVis, IGD, ISD, IBS, IFo, IBa, IGTF, IW, IGCC, IGCA, IPC, IRC, IT>::dbuct(
         IGVis& get_visits,
-        IGVal& get_value,
-        ISVis& set_visits,
-        ISVal& set_value,
         IGD&   get_dispatches,
         ISD&   set_dispatches,
         IBS&   compute_batch_size,
+        IFo&   forestep,
+        IBa&   backstep,
+        IGTF&  get_top_frame,
         IW&    walker,
+        IPC&   policy,
         IRC&   rollout,
-        IGVD&  value_delta,
-        IGEC&  get_exploration_constant,
-        INH    root)
+        IT&    terminate)
     : get_visits_(get_visits)
-    , get_value_(get_value)
-    , set_visits_(set_visits)
-    , set_value_(set_value)
     , get_dispatches_(get_dispatches)
     , set_dispatches_(set_dispatches)
     , compute_batch_size_(compute_batch_size)
+    , forestep_(forestep)
+    , backstep_(backstep)
+    , get_top_frame_(get_top_frame)
     , walker_(walker)
+    , policy_(policy)
     , rollout_(rollout)
-    , value_delta_(value_delta)
-    , get_exploration_constant_(get_exploration_constant)
+    , terminate_(terminate)
     , in_rollout_(false)
-{
-    stack_.push({root, std::numeric_limits<size_t>::max(), 0, IF{0}});
-}
+{}
 
-template<typename INH, typename IC, typename IF,
-         typename IGVis, typename IGVal, typename ISVis, typename ISVal,
+template<typename INH, typename IC, typename IGVis,
          typename IGD, typename ISD, typename IBS,
-         typename IW, typename IGCC, typename IGCA, typename IRC, typename IGVD, typename IGEC>
+         typename IFo, typename IBa, typename IGTF,
+         typename IW, typename IGCC, typename IGCA,
+         typename IPC, typename IRC, typename IT>
 IC
-dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IRC, IGVD, IGEC>::choose(
+dbuct<INH, IC, IGVis, IGD, ISD, IBS, IFo, IBa, IGTF, IW, IGCC, IGCA, IPC, IRC, IT>::choose(
         const IGCC& get_choice_count,
         const IGCA& get_choice_at)
 {
-    frame& current        = stack_.top();
-    size_t current_visits = get_visits_.get_visits(current.handle);
-    
     if (in_rollout_)
         return rollout_.rollout_choose(get_choice_count, get_choice_at);
 
-    IF     best_score = -std::numeric_limits<IF>::infinity();
-    size_t best_i     = 0;
-    size_t n          = get_choice_count.size();
-    IF     c          = get_exploration_constant_.get_exploration_constant(current.handle);
-    IF     ln_parent  = std::log(static_cast<IF>(current_visits));
+    dbuct_frame<INH>& current = get_top_frame_.top();
 
-    for (size_t i = 0; i < n; ++i)
-    {
-        IC        candidate = get_choice_at.at(i);
-        const INH child     = walker_.walk(current.handle, candidate);
-        size_t    child_v   = get_visits_.get_visits(child);
-
-        if (child_v == 0)
-        {
-            best_score = std::numeric_limits<IF>::infinity();
-            best_i     = i;
-            break;
-        }
-
-        IF exploit = get_value_.get_value(child) / static_cast<IF>(child_v);
-        IF explore = std::sqrt(ln_parent / static_cast<IF>(child_v));
-        IF score   = exploit + c * explore;
-
-        if (score > best_score)
-        {
-            best_score = score;
-            best_i     = i;
-        }
-    }
-
-    IC  chosen       = get_choice_at.at(best_i);
+    IC  chosen       = policy_.policy_choose(current.handle, get_choice_count, get_choice_at);
     INH child_handle = walker_.walk(current.handle, chosen);
 
     size_t current_dispatches = get_dispatches_.get_dispatches(current.handle);
@@ -172,72 +118,41 @@ dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IR
         remaining_budget);
     set_dispatches_.set_dispatches(current.handle, current_dispatches + 1);
 
-    stack_.push({child_handle, grant_k, 0, IF{0}});
+    forestep_.forestep(dbuct_frame<INH>(child_handle, grant_k));
 
     size_t child_visits = get_visits_.get_visits(child_handle);
-    
-    // expansion+rollout phase (frame already pushed so expansion done)
+
     if (child_visits == 0)
         in_rollout_ = true;
 
     return chosen;
 }
 
-template<typename INH, typename IC, typename IF,
-         typename IGVis, typename IGVal, typename ISVis, typename ISVal,
+template<typename INH, typename IC, typename IGVis,
          typename IGD, typename ISD, typename IBS,
-         typename IW, typename IGCC, typename IGCA, typename IRC, typename IGVD, typename IGEC>
+         typename IFo, typename IBa, typename IGTF,
+         typename IW, typename IGCC, typename IGCA,
+         typename IPC, typename IRC, typename IT>
 void
-dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IRC, IGVD, IGEC>::terminate()
+dbuct<INH, IC, IGVis, IGD, ISD, IBS, IFo, IBa, IGTF, IW, IGCC, IGCA, IPC, IRC, IT>::terminate_and_backtrack()
 {
-    add_visits(1);
-    add_value(value_delta_.get_value_delta(stack_.top().handle));
+    terminate_.terminate();
 
-    while (stack_.top().visit_lump >= stack_.top().budget)
-        backstep();
+    while (get_top_frame_.top().visit_lump >= get_top_frame_.top().budget)
+        backstep_.backstep();
 
     in_rollout_ = false;
 }
 
-template<typename INH, typename IC, typename IF,
-         typename IGVis, typename IGVal, typename ISVis, typename ISVal,
+template<typename INH, typename IC, typename IGVis,
          typename IGD, typename ISD, typename IBS,
-         typename IW, typename IGCC, typename IGCA, typename IRC, typename IGVD, typename IGEC>
-void
-dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IRC, IGVD, IGEC>::add_visits(
-        size_t v)
+         typename IFo, typename IBa, typename IGTF,
+         typename IW, typename IGCC, typename IGCA,
+         typename IPC, typename IRC, typename IT>
+bool
+dbuct<INH, IC, IGVis, IGD, ISD, IBS, IFo, IBa, IGTF, IW, IGCC, IGCA, IPC, IRC, IT>::in_rollout() const
 {
-    frame& f = stack_.top();
-    set_visits_.set_visits(f.handle, get_visits_.get_visits(f.handle) + v);
-    f.visit_lump += v;
-}
-
-template<typename INH, typename IC, typename IF,
-         typename IGVis, typename IGVal, typename ISVis, typename ISVal,
-         typename IGD, typename ISD, typename IBS,
-         typename IW, typename IGCC, typename IGCA, typename IRC, typename IGVD, typename IGEC>
-void
-dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IRC, IGVD, IGEC>::add_value(
-        IF l)
-{
-    frame& f = stack_.top();
-    set_value_.set_value(f.handle, get_value_.get_value(f.handle) + l);
-    f.value_lump += l;
-}
-
-template<typename INH, typename IC, typename IF,
-         typename IGVis, typename IGVal, typename ISVis, typename ISVal,
-         typename IGD, typename ISD, typename IBS,
-         typename IW, typename IGCC, typename IGCA, typename IRC, typename IGVD, typename IGEC>
-void
-dbuct<INH, IC, IF, IGVis, IGVal, ISVis, ISVal, IGD, ISD, IBS, IW, IGCC, IGCA, IRC, IGVD, IGEC>::backstep()
-{
-    const frame& current = stack_.top();
-    size_t v = current.visit_lump;
-    IF     l = current.value_lump;
-    stack_.pop();
-    add_visits(v);
-    add_value(l);
+    return in_rollout_;
 }
 
 }
