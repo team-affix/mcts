@@ -17,7 +17,7 @@ namespace monte_carlo
 //   Map        — map template, e.g. std::map
 //                Key type will be std::pair<NodeHandle, NodeHandle>
 //
-// Fulfils IGetEdgeVisits / ISetEdgeVisits policy requirements for sim:
+// Fulfils IGetEdgeVisits / ISetEdgeVisits policy requirements for uct:
 //   get_edge_visits(const NodeHandle& parent, const NodeHandle& child) -> size_t
 //   set_edge_visits(const NodeHandle& parent, const NodeHandle& child, size_t) -> void
 //

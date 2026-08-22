@@ -1,5 +1,5 @@
-#ifndef SIM_BACKPROP_PATH_HPP
-#define SIM_BACKPROP_PATH_HPP
+#ifndef UCT_BACKPROP_PATH_HPP
+#define UCT_BACKPROP_PATH_HPP
 
 #include <cstddef>
 #include <stack>
@@ -9,9 +9,9 @@ namespace monte_carlo
 {
 
 template<typename INodeHandle>
-struct sim_backprop_path
+struct uct_backprop_path
 {
-    sim_backprop_path(INodeHandle root);
+    uct_backprop_path(INodeHandle root);
 
     void        push(const INodeHandle& node);
     void        pop();
@@ -25,30 +25,30 @@ private:
 };
 
 template<typename INodeHandle>
-sim_backprop_path<INodeHandle>::sim_backprop_path(INodeHandle root)
+uct_backprop_path<INodeHandle>::uct_backprop_path(INodeHandle root)
     : nodes_(std::vector<INodeHandle>{root})
 {}
 
 template<typename INodeHandle>
-void sim_backprop_path<INodeHandle>::push(const INodeHandle& node)
+void uct_backprop_path<INodeHandle>::push(const INodeHandle& node)
 {
     nodes_.push(node);
 }
 
 template<typename INodeHandle>
-void sim_backprop_path<INodeHandle>::pop()
+void uct_backprop_path<INodeHandle>::pop()
 {
     nodes_.pop();
 }
 
 template<typename INodeHandle>
-INodeHandle sim_backprop_path<INodeHandle>::top() const
+INodeHandle uct_backprop_path<INodeHandle>::top() const
 {
     return nodes_.top();
 }
 
 template<typename INodeHandle>
-size_t sim_backprop_path<INodeHandle>::size() const
+size_t uct_backprop_path<INodeHandle>::size() const
 {
     return nodes_.size();
 }

@@ -8,8 +8,9 @@ struct in_rollout_flag
 {
     in_rollout_flag();
 
-    bool get_in_rollout() const;
-    void set_in_rollout(bool v);
+    bool is_in_rollout() const;
+    void enter_rollout();
+    void exit_rollout();
 
 private:
     bool in_rollout_;
@@ -19,14 +20,19 @@ in_rollout_flag::in_rollout_flag()
     : in_rollout_(false)
 {}
 
-bool in_rollout_flag::get_in_rollout() const
+bool in_rollout_flag::is_in_rollout() const
 {
     return in_rollout_;
 }
 
-void in_rollout_flag::set_in_rollout(bool v)
+void in_rollout_flag::enter_rollout()
 {
-    in_rollout_ = v;
+    in_rollout_ = true;
+}
+
+void in_rollout_flag::exit_rollout()
+{
+    in_rollout_ = false;
 }
 
 }

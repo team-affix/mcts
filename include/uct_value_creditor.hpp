@@ -1,5 +1,5 @@
-#ifndef SIM_VALUE_CREDITOR_HPP
-#define SIM_VALUE_CREDITOR_HPP
+#ifndef UCT_VALUE_CREDITOR_HPP
+#define UCT_VALUE_CREDITOR_HPP
 
 namespace monte_carlo
 {
@@ -9,9 +9,9 @@ template<
     typename ICreditVisit,
     typename IUpdateNode
 >
-struct sim_value_creditor
+struct uct_value_creditor
 {
-    sim_value_creditor(ICreditVisit& visit_creditor,
+    uct_value_creditor(ICreditVisit& visit_creditor,
                        IUpdateNode&  update_node);
 
     void credit(const INodeHandle& node);
@@ -22,7 +22,7 @@ private:
 };
 
 template<typename INH, typename ICV, typename IUN>
-sim_value_creditor<INH, ICV, IUN>::sim_value_creditor(
+uct_value_creditor<INH, ICV, IUN>::uct_value_creditor(
         ICV& visit_creditor,
         IUN& update_node)
     : visit_creditor_(visit_creditor)
@@ -30,7 +30,7 @@ sim_value_creditor<INH, ICV, IUN>::sim_value_creditor(
 {}
 
 template<typename INH, typename ICV, typename IUN>
-void sim_value_creditor<INH, ICV, IUN>::credit(const INH& node)
+void uct_value_creditor<INH, ICV, IUN>::credit(const INH& node)
 {
     visit_creditor_.credit(node);
     update_node_.update(node);

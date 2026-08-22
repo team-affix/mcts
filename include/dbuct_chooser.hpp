@@ -22,8 +22,8 @@ template<
     typename IGetChoiceAt,
     typename IPolicyChoose,
     typename IRolloutChoose,
-    typename IGetInRollout,
-    typename ISetInRollout
+    typename IIsInRollout,
+    typename IEnterRollout
 >
 struct dbuct_chooser
 {
@@ -36,8 +36,8 @@ struct dbuct_chooser
                   IWalker&           walker,
                   IPolicyChoose&     policy,
                   IRolloutChoose&    rollout,
-                  IGetInRollout&     get_in_rollout,
-                  ISetInRollout&     set_in_rollout);
+                  IIsInRollout&      is_in_rollout,
+                  IEnterRollout&     enter_rollout);
 
     IChoice choose(const IGetChoiceCount& get_choice_count,
                    const IGetChoiceAt&    get_choice_at);
@@ -52,8 +52,8 @@ private:
     IWalker&           walker_;
     IPolicyChoose&     policy_;
     IRolloutChoose&    rollout_;
-    IGetInRollout&     get_in_rollout_;
-    ISetInRollout&     set_in_rollout_;
+    IIsInRollout&      is_in_rollout_;
+    IEnterRollout&     enter_rollout_;
 };
 
 template<typename INH, typename IC, typename IGVis,
@@ -61,8 +61,8 @@ template<typename INH, typename IC, typename IGVis,
          typename IFo, typename IGTF,
          typename IW, typename IGCC, typename IGCA,
          typename IPC, typename IRC,
-         typename IGIR, typename ISIR>
-dbuct_chooser<INH, IC, IGVis, IGD, ISD, IBS, IFo, IGTF, IW, IGCC, IGCA, IPC, IRC, IGIR, ISIR>::dbuct_chooser(
+         typename IIIR, typename IER>
+dbuct_chooser<INH, IC, IGVis, IGD, ISD, IBS, IFo, IGTF, IW, IGCC, IGCA, IPC, IRC, IIIR, IER>::dbuct_chooser(
         IGVis& get_visits,
         IGD&   get_dispatches,
         ISD&   set_dispatches,
@@ -72,8 +72,8 @@ dbuct_chooser<INH, IC, IGVis, IGD, ISD, IBS, IFo, IGTF, IW, IGCC, IGCA, IPC, IRC
         IW&    walker,
         IPC&   policy,
         IRC&   rollout,
-        IGIR&  get_in_rollout,
-        ISIR&  set_in_rollout)
+        IIIR&  is_in_rollout,
+        IER&   enter_rollout)
     : get_visits_(get_visits)
     , get_dispatches_(get_dispatches)
     , set_dispatches_(set_dispatches)
@@ -83,8 +83,8 @@ dbuct_chooser<INH, IC, IGVis, IGD, ISD, IBS, IFo, IGTF, IW, IGCC, IGCA, IPC, IRC
     , walker_(walker)
     , policy_(policy)
     , rollout_(rollout)
-    , get_in_rollout_(get_in_rollout)
-    , set_in_rollout_(set_in_rollout)
+    , is_in_rollout_(is_in_rollout)
+    , enter_rollout_(enter_rollout)
 {}
 
 template<typename INH, typename IC, typename IGVis,
@@ -92,13 +92,13 @@ template<typename INH, typename IC, typename IGVis,
          typename IFo, typename IGTF,
          typename IW, typename IGCC, typename IGCA,
          typename IPC, typename IRC,
-         typename IGIR, typename ISIR>
+         typename IIIR, typename IER>
 IC
-dbuct_chooser<INH, IC, IGVis, IGD, ISD, IBS, IFo, IGTF, IW, IGCC, IGCA, IPC, IRC, IGIR, ISIR>::choose(
+dbuct_chooser<INH, IC, IGVis, IGD, ISD, IBS, IFo, IGTF, IW, IGCC, IGCA, IPC, IRC, IIIR, IER>::choose(
         const IGCC& get_choice_count,
         const IGCA& get_choice_at)
 {
-    if (get_in_rollout_.get_in_rollout())
+    if (is_in_rollout_.is_in_rollout())
         return rollout_.rollout_choose(get_choice_count, get_choice_at);
 
     dbuct_frame<INH>& current = get_top_frame_.top();
@@ -118,7 +118,7 @@ dbuct_chooser<INH, IC, IGVis, IGD, ISD, IBS, IFo, IGTF, IW, IGCC, IGCA, IPC, IRC
     size_t child_visits = get_visits_.get_visits(child_handle);
 
     if (child_visits == 0)
-        set_in_rollout_.set_in_rollout(true);
+        enter_rollout_.enter_rollout();
 
     return chosen;
 }

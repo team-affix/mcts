@@ -7,8 +7,8 @@ namespace monte_carlo
 // uniform_value_delta<IFloat>
 //
 // Concrete IGetValueDelta implementation: returns the same value for every node.
-// Use with sim::terminate(delta_fn) when all nodes on the backprop path should
-// receive an equal share of the episode reward.
+// Use when all nodes on the backprop path should receive an equal share of the
+// episode reward.
 
 template<typename IFloat>
 struct uniform_value_delta

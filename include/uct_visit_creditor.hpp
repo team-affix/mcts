@@ -1,5 +1,5 @@
-#ifndef SIM_VISIT_CREDITOR_HPP
-#define SIM_VISIT_CREDITOR_HPP
+#ifndef UCT_VISIT_CREDITOR_HPP
+#define UCT_VISIT_CREDITOR_HPP
 
 namespace monte_carlo
 {
@@ -9,9 +9,9 @@ template<
     typename IGetVisits,
     typename ISetVisits
 >
-struct sim_visit_creditor
+struct uct_visit_creditor
 {
-    sim_visit_creditor(IGetVisits& get_visits,
+    uct_visit_creditor(IGetVisits& get_visits,
                        ISetVisits& set_visits);
 
     void credit(const INodeHandle& node);
@@ -22,7 +22,7 @@ private:
 };
 
 template<typename INH, typename IGVis, typename ISVis>
-sim_visit_creditor<INH, IGVis, ISVis>::sim_visit_creditor(
+uct_visit_creditor<INH, IGVis, ISVis>::uct_visit_creditor(
         IGVis& get_visits,
         ISVis& set_visits)
     : get_visits_(get_visits)
@@ -30,7 +30,7 @@ sim_visit_creditor<INH, IGVis, ISVis>::sim_visit_creditor(
 {}
 
 template<typename INH, typename IGVis, typename ISVis>
-void sim_visit_creditor<INH, IGVis, ISVis>::credit(const INH& node)
+void uct_visit_creditor<INH, IGVis, ISVis>::credit(const INH& node)
 {
     set_visits_.set_visits(node, get_visits_.get_visits(node) + 1);
 }
