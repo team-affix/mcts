@@ -1,7 +1,12 @@
 #ifndef MCTS_HPP
 #define MCTS_HPP
 
-#include "sim.hpp"
+#include "sim_cursor.hpp"
+#include "sim_backprop_path.hpp"
+#include "sim_visit_creditor.hpp"
+#include "sim_value_creditor.hpp"
+#include "sim_chooser.hpp"
+#include "sim_terminator.hpp"
 #include "dbuct_chooser.hpp"
 #include "dbuct_terminator.hpp"
 #include "visits_table.hpp"
@@ -24,7 +29,7 @@
 #include "dbuct_visit_creditor.hpp"
 #include "dbuct_value_creditor.hpp"
 #include "in_rollout_flag.hpp"
-#include "sim_manifest.hpp"
+#include "sim_value_manifest.hpp"
 #include "dbuct_value_manifest.hpp"
 
 #endif

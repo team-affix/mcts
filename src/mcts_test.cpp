@@ -126,7 +126,7 @@ class CoinCollectingGameTest : public ::testing::Test
 protected:
     using visits_t   = monte_carlo::visits_table<std::vector<int>, path_unordered_map>;
     using value_t    = monte_carlo::value_table<std::vector<int>, double, path_unordered_map>;
-    using manifest_t = monte_carlo::sim_manifest<
+    using manifest_t = monte_carlo::sim_value_manifest<
                           std::vector<int>, jump_t, double,
                           visits_t, visits_t, value_t, value_t,
                           path_walker,
@@ -151,7 +151,7 @@ protected:
 
         while (true)
         {
-            jump_t chosen = m.s.choose(jumps, jumps);
+            jump_t chosen = m.chooser.choose(jumps, jumps);
             position += chosen;
             if (position >= static_cast<int>(track.size()))
                 break;
@@ -159,7 +159,7 @@ protected:
         }
 
         m.delta.set_value(total_score);
-        m.s.terminate();
+        m.terminator.terminate();
         return total_score;
     }
 
@@ -258,7 +258,7 @@ class TerminalRewardGameTest : public ::testing::Test
 protected:
     using visits_t   = monte_carlo::visits_table<int, std::unordered_map>;
     using value_t    = monte_carlo::value_table<int, double, std::unordered_map>;
-    using manifest_t = monte_carlo::sim_manifest<
+    using manifest_t = monte_carlo::sim_value_manifest<
                           int, jump_t, double,
                           visits_t, visits_t, value_t, value_t,
                           position_walker,
@@ -282,12 +282,12 @@ protected:
 
         while (true)
         {
-            jump_t chosen = m.s.choose(jumps, jumps);
+            jump_t chosen = m.chooser.choose(jumps, jumps);
             int    next   = position + chosen;
             if (next >= static_cast<int>(track.size()))
             {
                 m.delta.set_value(reward);
-                m.s.terminate();
+                m.terminator.terminate();
                 break;
             }
             position = next;
@@ -709,7 +709,7 @@ class DbuctStatEquivalenceTest : public ::testing::Test
 protected:
     using visits_t        = monte_carlo::visits_table<int, std::unordered_map>;
     using value_t         = monte_carlo::value_table<int, double, std::unordered_map>;
-    using sim_manifest_t  = monte_carlo::sim_manifest<
+    using sim_value_manifest_t = monte_carlo::sim_value_manifest<
                                int, jump_t, double,
                                visits_t, visits_t, value_t, value_t,
                                position_walker,
@@ -731,19 +731,19 @@ protected:
                      std::mt19937&              rng,
                      double                     c)
     {
-        sim_manifest_t m(visits, visits, value, value, rng, c, -1);
+        sim_value_manifest_t m(visits, visits, value, value, rng, c, -1);
 
         int    position = -1;
         double reward   = 0.0;
 
         while (true)
         {
-            jump_t chosen = m.s.choose(jumps, jumps);
+            jump_t chosen = m.chooser.choose(jumps, jumps);
             int    next   = position + chosen;
             if (next >= static_cast<int>(track.size()))
             {
                 m.delta.set_value(reward);
-                m.s.terminate();
+                m.terminator.terminate();
                 break;
             }
             position = next;
@@ -1746,6 +1746,276 @@ TEST_F(Ucb1Test, PicksHighestValuePerVisitRatio)
 }
 
 // ---------------------------------------------------------------------------
+// SimCursorTest
+// ---------------------------------------------------------------------------
+class SimCursorTest : public ::testing::Test
+{
+protected:
+    monte_carlo::sim_cursor<int> sut{-1};
+};
+
+TEST_F(SimCursorTest, StartsAtRoot)
+{
+    EXPECT_EQ(sut.get_current_node(), -1);
+}
+
+TEST_F(SimCursorTest, SetMovesCursor)
+{
+    sut.set_current_node(4);
+    EXPECT_EQ(sut.get_current_node(), 4);
+}
+
+// ---------------------------------------------------------------------------
+// SimBackpropPathTest
+// ---------------------------------------------------------------------------
+class SimBackpropPathTest : public ::testing::Test
+{
+protected:
+    monte_carlo::sim_backprop_path<int> sut{-1};
+};
+
+TEST_F(SimBackpropPathTest, SeededWithRoot)
+{
+    EXPECT_EQ(sut.size(), 1u);
+    EXPECT_EQ(sut.top(), -1);
+}
+
+TEST_F(SimBackpropPathTest, PushThenPopUnwindsInReverseOrder)
+{
+    sut.push(0);
+    sut.push(1);
+
+    EXPECT_EQ(sut.size(), 3u);
+
+    EXPECT_EQ(sut.top(), 1);
+    sut.pop();
+    EXPECT_EQ(sut.top(), 0);
+    sut.pop();
+    EXPECT_EQ(sut.top(), -1);
+    sut.pop();
+
+    EXPECT_EQ(sut.size(), 0u);
+}
+
+// ---------------------------------------------------------------------------
+// SimVisitCreditorTest
+// ---------------------------------------------------------------------------
+class SimVisitCreditorTest : public ::testing::Test
+{
+protected:
+    NiceMock<MockGetVisits>   get_visits;
+    StrictMock<MockSetVisits> set_visits;
+    monte_carlo::sim_visit_creditor<int,
+                                    MockGetVisits,
+                                    MockSetVisits> sut{get_visits, set_visits};
+};
+
+TEST_F(SimVisitCreditorTest, CreditWritesBackOneMoreVisit)
+{
+    ON_CALL(get_visits, get_visits(7)).WillByDefault(Return(4));
+    EXPECT_CALL(set_visits, set_visits(7, 5));
+
+    sut.credit(7);
+}
+
+// ---------------------------------------------------------------------------
+// SimValueCreditorTest
+// ---------------------------------------------------------------------------
+struct MockCreditVisitNode
+{
+    MOCK_METHOD(void, credit, (const int&), ());
+};
+
+struct MockUpdateNode
+{
+    MOCK_METHOD(void, update, (const int&), ());
+};
+
+class SimValueCreditorTest : public ::testing::Test
+{
+protected:
+    StrictMock<MockCreditVisitNode> visit_creditor;
+    StrictMock<MockUpdateNode>      update_node;
+    monte_carlo::sim_value_creditor<int,
+                                    MockCreditVisitNode,
+                                    MockUpdateNode> sut{visit_creditor, update_node};
+};
+
+TEST_F(SimValueCreditorTest, CreditVisitsThenUpdatesValueForSameNode)
+{
+    InSequence seq;
+    EXPECT_CALL(visit_creditor, credit(7));
+    EXPECT_CALL(update_node, update(7));
+
+    sut.credit(7);
+}
+
+// ---------------------------------------------------------------------------
+// SimChooserTest
+// ---------------------------------------------------------------------------
+struct MockGetCurrentNode
+{
+    MOCK_METHOD(int, get_current_node, (), (const));
+};
+
+struct MockSetCurrentNode
+{
+    MOCK_METHOD(void, set_current_node, (int), ());
+};
+
+struct MockPushNode
+{
+    MOCK_METHOD(void, push, (const int&), ());
+};
+
+class SimChooserTest : public ::testing::Test
+{
+protected:
+    NiceMock<MockGetVisits>             get_visits;
+    position_walker                     walker;
+    StrictMock<MockPolicyChoose>        policy;
+    StrictMock<MockRolloutChoose>       rollout;
+    NiceMock<MockGetCurrentNode>        get_current_node;
+    StrictMock<MockSetCurrentNode>      set_current_node;
+    StrictMock<MockPushNode>            push_node;
+    NiceMock<MockGetInRollout>          get_in_rollout;
+    StrictMock<MockSetInRolloutChooser> set_in_rollout;
+    std::vector<jump_t>                 jumps_{1};
+
+    monte_carlo::sim_chooser<int, jump_t,
+                             MockGetVisits,
+                             position_walker,
+                             std::vector<jump_t>,
+                             std::vector<jump_t>,
+                             MockPolicyChoose,
+                             MockRolloutChoose,
+                             MockGetCurrentNode,
+                             MockSetCurrentNode,
+                             MockPushNode,
+                             MockGetInRollout,
+                             MockSetInRolloutChooser> sut{
+        get_visits,
+        walker,
+        policy,
+        rollout,
+        get_current_node,
+        set_current_node,
+        push_node,
+        get_in_rollout,
+        set_in_rollout};
+};
+
+TEST_F(SimChooserTest, RolloutPhaseAdvancesCursorWithoutPushingPath)
+{
+    ON_CALL(get_in_rollout, get_in_rollout()).WillByDefault(Return(true));
+    ON_CALL(get_current_node, get_current_node()).WillByDefault(Return(2));
+
+    EXPECT_CALL(rollout, rollout_choose(jumps_, jumps_)).WillOnce(Return(jump_t{1}));
+    EXPECT_CALL(set_current_node, set_current_node(3));
+    EXPECT_CALL(push_node, push(_)).Times(0);
+    EXPECT_CALL(policy, policy_choose(_, _, _)).Times(0);
+
+    EXPECT_EQ(sut.choose(jumps_, jumps_), 1);
+}
+
+TEST_F(SimChooserTest, TreePhasePushesChildAndAdvancesCursor)
+{
+    ON_CALL(get_in_rollout, get_in_rollout()).WillByDefault(Return(false));
+    ON_CALL(get_current_node, get_current_node()).WillByDefault(Return(-1));
+    ON_CALL(get_visits, get_visits(0)).WillByDefault(Return(5));
+
+    InSequence seq;
+    EXPECT_CALL(policy, policy_choose(-1, jumps_, jumps_)).WillOnce(Return(1));
+    EXPECT_CALL(push_node, push(0));
+    EXPECT_CALL(set_current_node, set_current_node(0));
+    EXPECT_CALL(set_in_rollout, set_in_rollout(true)).Times(0);
+
+    EXPECT_EQ(sut.choose(jumps_, jumps_), 1);
+}
+
+TEST_F(SimChooserTest, TreePhaseEntersRolloutOnUnvisitedChild)
+{
+    ON_CALL(get_in_rollout, get_in_rollout()).WillByDefault(Return(false));
+    ON_CALL(get_current_node, get_current_node()).WillByDefault(Return(-1));
+    ON_CALL(get_visits, get_visits(0)).WillByDefault(Return(0));
+
+    EXPECT_CALL(policy, policy_choose(-1, jumps_, jumps_)).WillOnce(Return(1));
+    EXPECT_CALL(push_node, push(0));
+    EXPECT_CALL(set_current_node, set_current_node(0));
+    EXPECT_CALL(set_in_rollout, set_in_rollout(true)).Times(1);
+    EXPECT_CALL(rollout, rollout_choose(_, _)).Times(0);
+
+    EXPECT_EQ(sut.choose(jumps_, jumps_), 1);
+}
+
+// ---------------------------------------------------------------------------
+// SimTerminatorTest
+// ---------------------------------------------------------------------------
+struct MockGetNodeCount
+{
+    MOCK_METHOD(size_t, size, (), (const));
+};
+
+struct MockGetTopNode
+{
+    MOCK_METHOD(int, top, (), (const));
+};
+
+struct MockPopNode
+{
+    MOCK_METHOD(void, pop, (), ());
+};
+
+struct MockCreditNode
+{
+    MOCK_METHOD(void, credit, (const int&), ());
+};
+
+class SimTerminatorTest : public ::testing::Test
+{
+protected:
+    StrictMock<MockGetNodeCount>   get_node_count;
+    StrictMock<MockGetTopNode>     get_top_node;
+    StrictMock<MockPopNode>        pop_node;
+    StrictMock<MockCreditNode>     credit_node;
+    StrictMock<MockSetInRollout>   set_in_rollout;
+    monte_carlo::sim_terminator<int,
+                                MockGetNodeCount,
+                                MockGetTopNode,
+                                MockPopNode,
+                                MockCreditNode,
+                                MockSetInRollout> sut{
+        get_node_count, get_top_node, pop_node, credit_node, set_in_rollout};
+};
+
+TEST_F(SimTerminatorTest, TerminateDrainsPathLeafFirstThenClearsFlag)
+{
+    InSequence seq;
+    EXPECT_CALL(get_node_count, size()).WillOnce(Return(2));
+    EXPECT_CALL(get_top_node, top()).WillOnce(Return(7));
+    EXPECT_CALL(credit_node, credit(7));
+    EXPECT_CALL(pop_node, pop());
+    EXPECT_CALL(get_node_count, size()).WillOnce(Return(1));
+    EXPECT_CALL(get_top_node, top()).WillOnce(Return(3));
+    EXPECT_CALL(credit_node, credit(3));
+    EXPECT_CALL(pop_node, pop());
+    EXPECT_CALL(get_node_count, size()).WillOnce(Return(0));
+    EXPECT_CALL(set_in_rollout, set_in_rollout(false));
+
+    sut.terminate();
+}
+
+TEST_F(SimTerminatorTest, TerminateOnEmptyPathOnlyClearsFlag)
+{
+    EXPECT_CALL(get_node_count, size()).WillOnce(Return(0));
+    EXPECT_CALL(credit_node, credit(_)).Times(0);
+    EXPECT_CALL(pop_node, pop()).Times(0);
+    EXPECT_CALL(set_in_rollout, set_in_rollout(false));
+
+    sut.terminate();
+}
+
+// ---------------------------------------------------------------------------
 // SimInRolloutTest
 // ---------------------------------------------------------------------------
 class SimInRolloutTest : public ::testing::Test
@@ -1753,7 +2023,7 @@ class SimInRolloutTest : public ::testing::Test
 protected:
     using visits_t   = monte_carlo::visits_table<int, std::unordered_map>;
     using value_t    = monte_carlo::value_table<int, double, std::unordered_map>;
-    using manifest_t = monte_carlo::sim_manifest<
+    using manifest_t = monte_carlo::sim_value_manifest<
                           int, jump_t, double,
                           visits_t, visits_t, value_t, value_t,
                           position_walker,
@@ -1774,14 +2044,14 @@ TEST_F(SimInRolloutTest, FlagTransitionsEpisodes1And2)
 
         EXPECT_FALSE(m.in_rollout.get_in_rollout());
 
-        m.s.choose(jumps, jumps);
+        m.chooser.choose(jumps, jumps);
         EXPECT_TRUE(m.in_rollout.get_in_rollout());
 
-        m.s.choose(jumps, jumps);
+        m.chooser.choose(jumps, jumps);
         EXPECT_TRUE(m.in_rollout.get_in_rollout());
 
         m.delta.set_value(5.0);
-        m.s.terminate();
+        m.terminator.terminate();
         EXPECT_FALSE(m.in_rollout.get_in_rollout());
     }
 
@@ -1790,14 +2060,14 @@ TEST_F(SimInRolloutTest, FlagTransitionsEpisodes1And2)
 
         EXPECT_FALSE(m.in_rollout.get_in_rollout());
 
-        m.s.choose(jumps, jumps);
+        m.chooser.choose(jumps, jumps);
         EXPECT_FALSE(m.in_rollout.get_in_rollout());
 
-        m.s.choose(jumps, jumps);
+        m.chooser.choose(jumps, jumps);
         EXPECT_TRUE(m.in_rollout.get_in_rollout());
 
         m.delta.set_value(5.0);
-        m.s.terminate();
+        m.terminator.terminate();
         EXPECT_FALSE(m.in_rollout.get_in_rollout());
     }
 }
@@ -1810,7 +2080,7 @@ class SimTerminateBackpropTest : public ::testing::Test
 protected:
     using visits_t   = monte_carlo::visits_table<int, std::unordered_map>;
     using value_t    = monte_carlo::value_table<int, double, std::unordered_map>;
-    using manifest_t = monte_carlo::sim_manifest<
+    using manifest_t = monte_carlo::sim_value_manifest<
                           int, jump_t, double,
                           visits_t, visits_t, value_t, value_t,
                           position_walker,
@@ -1824,12 +2094,12 @@ protected:
 
         while (true)
         {
-            jump_t chosen = m.s.choose(jumps, jumps);
+            jump_t chosen = m.chooser.choose(jumps, jumps);
             int    next   = position + chosen;
             if (next >= 3)
             {
                 m.delta.set_value(reward);
-                m.s.terminate();
+                m.terminator.terminate();
                 return;
             }
             position = next;
