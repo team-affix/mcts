@@ -1,6 +1,9 @@
 CompileFlags:
   Add:
     - "-std=c++20"
-    - "-I./include"
+    - "-I./core/hpp"
+    - "-I./core/test"
     - "-I./googletest/googletest/include"
     - "-I./googletest/googletest"
+    - "-I./googletest/googlemock/include"
+    - "-I./googletest/googlemock"
