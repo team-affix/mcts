@@ -90,8 +90,10 @@ TEST_F(DbuctCampingLumpTest, LumpInvariantHoldsAcrossGrantPeriods)
     // supplied to terminate() during that grant period.  This holds
     // regardless of nested frame depth or which episodes yield 0 reward.
     // The visit-proportional grant check: delta_visits == 1 + floor(k * V_before),
-    // where V_before is root's visit count at period start (frozen for the whole
-    // period, since root only banks visits when its child backsteps).
+    // where V_before is pos0's visit count at period start -- pos0 is the child
+    // root grants to, and the grant reads the child.  pos0's count is read at
+    // period start because that is when root's choose() happens; it climbs again
+    // mid-period as pos0's own children roll up.
     const std::vector<double> track = {7.0};
     const std::vector<jump_t> jumps = {1};
     const double              k     = 0.5;
@@ -106,7 +108,7 @@ TEST_F(DbuctCampingLumpTest, LumpInvariantHoldsAcrossGrantPeriods)
     // For each: assert the grant formula and the lump invariant.
     for (size_t period = 0; period < 10; ++period)
     {
-        const size_t V_before       = visits.get_visits(-1);
+        const size_t V_before       = visits.get_visits(0);
         const size_t expected_grant = 1 + static_cast<size_t>(k * V_before);
         const PeriodResult r = run_grant_period(m, visits, value, track, jumps, path);
         EXPECT_EQ(r.delta_visits, expected_grant)

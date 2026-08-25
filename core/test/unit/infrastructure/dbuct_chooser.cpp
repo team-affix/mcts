@@ -121,7 +121,7 @@ TEST_F(DbuctChooserTest, TreePhaseGrantsAndForesteps)
     ON_CALL(get_visits, get_visits(0)).WillByDefault(Return(5));
 
     EXPECT_CALL(policy, policy_choose(-1, jumps_, jumps_)).WillOnce(Return(1));
-    EXPECT_CALL(get_grant, get_grant(-1)).WillOnce(Return(5));
+    EXPECT_CALL(get_grant, get_grant(0)).WillOnce(Return(5));
     EXPECT_CALL(forestep, forestep(monte_carlo::dbuct_frame<int>(0, 5)));
     EXPECT_CALL(rollout, rollout_choose(_, _)).Times(0);
     EXPECT_CALL(enter_rollout, enter_rollout()).Times(0);
@@ -138,7 +138,7 @@ TEST_F(DbuctChooserTest, TreePhaseClampsGrantToRemainingBudget)
     ON_CALL(get_visits, get_visits(0)).WillByDefault(Return(5));
 
     EXPECT_CALL(policy, policy_choose(-1, jumps_, jumps_)).WillOnce(Return(1));
-    EXPECT_CALL(get_grant, get_grant(-1)).WillOnce(Return(9));
+    EXPECT_CALL(get_grant, get_grant(0)).WillOnce(Return(9));
     EXPECT_CALL(forestep, forestep(monte_carlo::dbuct_frame<int>(0, 1)));
     EXPECT_CALL(enter_rollout, enter_rollout()).Times(0);
 
@@ -152,7 +152,7 @@ TEST_F(DbuctChooserTest, TreePhaseEntersRolloutOnUnvisitedChild)
     ON_CALL(get_visits, get_visits(0)).WillByDefault(Return(0));
 
     EXPECT_CALL(policy, policy_choose(-1, jumps_, jumps_)).WillOnce(Return(1));
-    EXPECT_CALL(get_grant, get_grant(-1)).WillOnce(Return(5));
+    EXPECT_CALL(get_grant, get_grant(0)).WillOnce(Return(5));
     EXPECT_CALL(forestep, forestep(monte_carlo::dbuct_frame<int>(0, 5)));
     EXPECT_CALL(enter_rollout, enter_rollout()).Times(1);
 

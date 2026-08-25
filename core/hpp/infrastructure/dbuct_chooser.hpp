@@ -94,12 +94,11 @@ dbuct_chooser<INH, IC, IGVis, IGG, IFo, IGTF, IW, IGCC, IGCA, IPC, IRC, IIIR, IE
     IC  chosen       = policy_.policy_choose(current.handle, get_choice_count, get_choice_at);
     INH child_handle = walker_.walk(current.handle, chosen);
 
+    size_t child_visits     = get_visits_.get_visits(child_handle);
     size_t remaining_budget = current.budget - current.visit_lump;
-    size_t grant_k = std::min(get_grant_.get_grant(current.handle), remaining_budget);
+    size_t grant_k = std::min(get_grant_.get_grant(child_handle), remaining_budget);
 
     forestep_.forestep(dbuct_frame<INH>(child_handle, grant_k));
-
-    size_t child_visits = get_visits_.get_visits(child_handle);
 
     if (child_visits == 0)
         enter_rollout_.enter_rollout();

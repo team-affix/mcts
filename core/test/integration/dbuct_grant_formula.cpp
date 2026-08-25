@@ -1,13 +1,17 @@
-// Verifies grant_k = 1 + floor(k * visits(parent)) by observing the delta in
+// Verifies grant_k = 1 + floor(k * visits(child)) by observing the delta in
 // bank.get_visits(root) after each camping grant period completes.  Root's visit
 // count only increases when a child frame backsteps to root, and increases by
 // exactly grant_k (the child's budget), making the jump in bank.get_visits(-1)
 // the sole public observable needed.
 //
-// Because the grant reads the parent's visit count, the per-period grants form a
-// closed-form recurrence:  V_next = V + 1 + floor(k * V), starting from V = 1
-// after the seeding episode.  The expectations below are that recurrence
-// unrolled by hand, not fitted to observed output.
+// The grant reads pos0, the child root hands the budget to.  Root banks exactly
+// the lump pos0 accumulated, so the two counts coincide at every period boundary
+// -- which is the instant root's choose() computes the grant -- and diverge only
+// mid-period, while pos0 runs ahead.  The per-period grants therefore follow a
+// closed-form recurrence in the shared boundary value:
+//     V_next = V + 1 + floor(k * V), starting from V = 1 after the seed episode.
+// The expectations below are that recurrence unrolled by hand, not fitted to
+// observed output.
 
 #include <random>
 #include <unordered_map>
@@ -72,10 +76,10 @@ protected:
     }
 };
 
-TEST_F(DbuctGrantFormulaTest, GrantGrowsWithRootVisitsKHalf)
+TEST_F(DbuctGrantFormulaTest, GrantGrowsWithChildVisitsKHalf)
 {
-    // Single-path game: root -> pos0 -> OOB.  Root is the only parent whose grant
-    // is under test, and root's visit count is frozen for the whole period, so
+    // Single-path game: root -> pos0 -> OOB.  Only the grant root hands to pos0 is
+    // under test, and at period start pos0's count equals root's, so
     // grant_k = 1 + floor(0.5 * V) with V the count observed at period start.
     //
     // V:      1  2  3  4  6  9 14 21 31 47   <- grant paid out this period
@@ -105,7 +109,7 @@ TEST_F(DbuctGrantFormulaTest, GrantGrowsWithRootVisitsKHalf)
     EXPECT_EQ(visits.get_visits(-1), 139u);
 }
 
-TEST_F(DbuctGrantFormulaTest, GrantGrowsWithRootVisitsKQuarter)
+TEST_F(DbuctGrantFormulaTest, GrantGrowsWithChildVisitsKQuarter)
 {
     // Same game, k = 0.25: the grant stays at 1 while floor(0.25 * V) is 0,
     // i.e. for V = 1..3, then climbs.

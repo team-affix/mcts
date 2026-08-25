@@ -55,14 +55,15 @@ TEST_F(DbuctStackLockstepTest, FrameAndValueStacksShareTopHandle)
 
     manifest_t m(visits, visits, value, value, rng, 0.0, 0.5, -1);
 
-    // With k=0.5 the first two episodes run at grant 1 and unwind completely; the
-    // third runs at grant 2 on both levels and leaves the chain camped on the OOB
-    // node, which is where the two stacks must still agree.
+    // With k=0.5 the first two episodes run at grant 1 and unwind completely.  On
+    // the third, pos0 has 2 visits and earns budget 2 while the OOB node still has
+    // 1 and earns budget 1, so only pos0 stays camped -- and that is where the two
+    // stacks must still agree.
     run_episode(m, jumps);
     run_episode(m, jumps);
     run_episode(m, jumps);
 
-    EXPECT_EQ(m.frame_stack.size(), 3u);
-    EXPECT_EQ(m.frame_stack.top().handle, 1);
-    EXPECT_EQ(m.value_stack.top().handle, 1);
+    EXPECT_EQ(m.frame_stack.size(), 2u);
+    EXPECT_EQ(m.frame_stack.top().handle, 0);
+    EXPECT_EQ(m.value_stack.top().handle, 0);
 }
