@@ -25,7 +25,7 @@ protected:
                           visits_t, visits_t, value_t, value_t,
                           position_walker,
                           std::vector<jump_t>, std::vector<jump_t>,
-                          std::mt19937, std::unordered_map>;
+                          std::mt19937>;
 
     // Runs one episode and returns the reward value passed to terminate().
     // Reward is pre-initialised from the starting position so that camping
@@ -89,27 +89,29 @@ TEST_F(DbuctCampingLumpTest, LumpInvariantHoldsAcrossGrantPeriods)
     // The lump invariant: value[root] delta == sum of all rewards
     // supplied to terminate() during that grant period.  This holds
     // regardless of nested frame depth or which episodes yield 0 reward.
-    // The dispatch-based grant check: delta_visits == 1 + D_before / GII.
+    // The visit-proportional grant check: delta_visits == 1 + floor(k * V_before),
+    // where V_before is root's visit count at period start (frozen for the whole
+    // period, since root only banks visits when its child backsteps).
     const std::vector<double> track = {7.0};
     const std::vector<jump_t> jumps = {1};
-    const size_t              GII   = 2;
+    const double              k     = 0.5;
     std::mt19937              rng(0);
     visits_t                  visits;
     value_t                   value;
 
-    manifest_t m(visits, visits, value, value, rng, 0.0, GII, -1);
+    manifest_t m(visits, visits, value, value, rng, 0.0, k, -1);
     std::vector<int> path = {-1};
 
     // Loop over 10 sequential periods.
-    // For each: assert dispatch-based grant and lump invariant.
+    // For each: assert the grant formula and the lump invariant.
     for (size_t period = 0; period < 10; ++period)
     {
-        const size_t D_before        = m.dispatches.get_dispatches(-1);
-        const size_t expected_grant  = 1 + D_before / GII;
+        const size_t V_before       = visits.get_visits(-1);
+        const size_t expected_grant = 1 + static_cast<size_t>(k * V_before);
         const PeriodResult r = run_grant_period(m, visits, value, track, jumps, path);
         EXPECT_EQ(r.delta_visits, expected_grant)
             << "visits delta wrong for period=" << period
-            << " D_before=" << D_before << " GII=" << GII;
+            << " V_before=" << V_before << " k=" << k;
         EXPECT_DOUBLE_EQ(r.delta_value, r.sum_rewards)
             << "value lump mismatch for period=" << period
             << " (delta_value=" << r.delta_value

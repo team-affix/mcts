@@ -1,6 +1,6 @@
 // Verifies the frame stack size after terminate() reflects budget-driven
-// backtracking.  Root only = 1; a child camping one level deep = 2.  Callers
-// sync their path via path.resize(frame_stack.size()).
+// backtracking.  Root only = 1; every unexhausted frame left on the stack adds
+// one level.  Callers sync their path via path.resize(frame_stack.size()).
 
 #include <random>
 #include <unordered_map>
@@ -22,7 +22,7 @@ protected:
                           visits_t, visits_t, value_t, value_t,
                           position_walker,
                           std::vector<jump_t>, std::vector<jump_t>,
-                          std::mt19937, std::unordered_map>;
+                          std::mt19937>;
 
     void run_episode(manifest_t&                m,
                      const std::vector<double>& track,
@@ -53,44 +53,56 @@ protected:
 
 TEST_F(DbuctDepthTest, ReturnsCorrectCampingFrameIndex)
 {
-    // Single-step game: root(-1) → pos0 → OOB.
-    // GII=2: dispatches D=0,1 give grant=1 (budget=1, always fully consumed → depth=1).
-    //        dispatch  D=2     gives grant=2 (budget=2 at pos0):
-    //          first  episode under that budget: pos0 not exhausted → camping, depth=2.
-    //          second episode under that budget: pos0 exhausted     → backstep to root, depth=1.
+    // Single-step game: root(-1) → pos0(0) → OOB(1).
+    //
+    // The grant reads the PARENT's visit count.  A backstep hands the child's
+    // whole lump to its parent, so the two GAIN the same amount per camping
+    // period; any head start the parent already had is preserved, not erased.
+    // Here the tree starts empty and pos0 is on the path from the very first
+    // episode, so it enters level with root and stays level, and both switch
+    // from grant=1 to grant=2 on the same episode.  That is why no k camps pos0
+    // alone in THIS fixture -- on a pre-seeded tree where root leads pos0 it
+    // would.  (OOB is the counter-example: it joins one episode later and
+    // trails by that one visit forever.)
+    //
+    // k=0.5, so grant = 1 + floor(0.5 * V):
+    //   V=0,1 → grant 1: the child's budget is consumed by its single episode
+    //           and the whole chain unwinds → depth 1.
+    //   V=2   → grant 2 at both levels: pos0 and OOB each end the episode with
+    //           lump 1 < budget 2, so both stay camped → depth 3.
     const std::vector<double> track = {1.0};
     const std::vector<jump_t> jumps = {1};
     std::mt19937              rng(42);
     visits_t                  visits;
     value_t                   value;
 
-    manifest_t m(visits, visits, value, value, rng, 0.0, 2, -1);   // GII = 2
+    manifest_t m(visits, visits, value, value, rng, 0.0, 0.5, -1);
 
     std::vector<int> path = {-1};
 
-    // Expansion-first: choose() always dispatches a child before rolling out,
-    // so every episode increments the dispatch counter.
-    // D=0 → grant=1, D=1 → grant=1, D=2 → grant=2 (camping begins).
+    // Each grant-1 episode banks exactly 1 visit everywhere on the path, so the
+    // visit count walks 0 → 1 → 2 and the grant walks 1 → 1 → 2.
 
-    // ep1: D(-1)=0 before dispatch, grant=1. Expand pos0, rollout from pos0.
+    // ep1: V=0 at choose, grant=1. Expand pos0, rollout from pos0.
     //      pos0 budget=1 exhausted immediately → depth=1, path={-1}.
     run_episode(m, track, jumps, path);
     EXPECT_EQ(m.frame_stack.size(), 1u);
     EXPECT_EQ(path.back(), -1);
 
-    // ep2: D(-1)=1 before dispatch, grant=1. Same pattern → depth=1, path={-1}.
+    // ep2: V=1 at choose, grant=1 at both levels. Same pattern → depth=1.
     run_episode(m, track, jumps, path);
     EXPECT_EQ(m.frame_stack.size(), 1u);
     EXPECT_EQ(path.back(), -1);
 
-    // ep3: D(-1)=2 before dispatch, grant=2. pos0 gets budget=2; after 1 sim
-    //      visit_lump=1<2 → camping at pos0, depth=2, path={-1, 0}.
+    // ep3: V=2 at choose, grant=2. pos0 gets budget=2 and hands OOB budget=2;
+    //      OOB ends with lump=1<2, so nothing unwinds → depth=3, path={-1,0,1}.
     run_episode(m, track, jumps, path);
-    EXPECT_EQ(m.frame_stack.size(), 2u);
-    EXPECT_EQ(path.back(), 0);
+    EXPECT_EQ(m.frame_stack.size(), 3u);
+    EXPECT_EQ(path.back(), 1);
 
-    // ep4: continuing from pos0 (path={-1,0}). pos0's second sim exhausts budget=2
-    //      → backstep to root, depth=1, path={-1}.
+    // ep4: resumes at OOB (path={-1,0,1}), whose remaining budget is 1, so its
+    //      child gets grant 1 and exhausts.  That fills OOB's lump to 2 and
+    //      pos0's to 2, so the whole chain unwinds → depth=1, path={-1}.
     run_episode(m, track, jumps, path);
     EXPECT_EQ(m.frame_stack.size(), 1u);
     EXPECT_EQ(path.back(), -1);
@@ -98,27 +110,28 @@ TEST_F(DbuctDepthTest, ReturnsCorrectCampingFrameIndex)
 
 TEST_F(DbuctDepthTest, ManualBackstepToRootOverridesCamping)
 {
-    // Same GII=2 setup as above.  Episode 4 would normally camp at pos0
-    // (depth=2).  Caller invokes backstep() after terminate() to climb to root,
-    // and the pos0 lump is rolled into root's lump as usual.
+    // Same k=0.5 setup as above.  Episode 3 would normally leave both pos0 and
+    // OOB camped (depth=3).  Caller invokes backstep() after terminate() to
+    // climb back to root, and each partial lump is rolled into its parent as a
+    // budget-driven backstep would do.
     const std::vector<double> track = {1.0};
     const std::vector<jump_t> jumps = {1};
     std::mt19937              rng(42);
     visits_t                  visits;
     value_t                   value;
 
-    manifest_t m(visits, visits, value, value, rng, 0.0, 2, -1);   // GII = 2
+    manifest_t m(visits, visits, value, value, rng, 0.0, 0.5, -1);
 
     std::vector<int> path = {-1};
 
-    // Advance through eps 1-2 (D=0,1 → grant=1 periods; camping begins at D=2).
+    // Advance through eps 1-2 (V=0,1 → grant=1; camping begins at V=2).
     run_episode(m, track, jumps, path);
     run_episode(m, track, jumps, path);
     ASSERT_EQ(path.back(), -1);
 
     const size_t root_visits_before = visits.get_visits(-1);
 
-    // ep4: grant=2, pos0 would camp at depth=2 — caller backsteps to root.
+    // ep3: grant=2, the chain would camp at depth=3 — caller backsteps to root.
     {
         int    position = path.back();
         double reward   = 0.0;
@@ -146,7 +159,7 @@ TEST_F(DbuctDepthTest, ManualBackstepToRootOverridesCamping)
     EXPECT_EQ(m.frame_stack.size(), 1u);
     EXPECT_EQ(path.back(), -1);
 
-    // Verify that pos0's partial lump (1 visit) was rolled into root even
-    // though pos0's budget was not naturally exhausted.
+    // Verify that the single episode's visit reached root through both partial
+    // lumps, even though neither budget was naturally exhausted.
     EXPECT_EQ(visits.get_visits(-1) - root_visits_before, 1u);
 }

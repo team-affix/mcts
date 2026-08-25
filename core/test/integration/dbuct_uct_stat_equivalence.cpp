@@ -1,8 +1,7 @@
-// With GII=SIZE_MAX, dbuct must produce bit-identical bank stats to vanilla uct
-// after N episodes driven from the same RNG state.  All assertions operate
-// exclusively on caller-owned bank queries: get_visits() and get_value().
+// With k=0 every grant is 1, so dbuct must produce bit-identical bank stats to
+// vanilla uct after N episodes driven from the same RNG state.  All assertions
+// operate exclusively on caller-owned bank queries: get_visits() and get_value().
 
-#include <limits>
 #include <random>
 #include <unordered_map>
 #include <vector>
@@ -30,7 +29,7 @@ protected:
                                visits_t, visits_t, value_t, value_t,
                                position_walker,
                                std::vector<jump_t>, std::vector<jump_t>,
-                               std::mt19937, std::unordered_map>;
+                               std::mt19937>;
 
     // One uct episode using the terminal-reward convention (reward = last
     // in-bounds position's track value).
@@ -61,7 +60,7 @@ protected:
         }
     }
 
-    // N dbuct episodes with GII=SIZE_MAX (≡ vanilla UCT).
+    // N dbuct episodes with k=0 (≡ vanilla UCT: every grant is 1).
     void dbuct_episodes(visits_t&                  visits,
                         value_t&                   value,
                         const std::vector<double>& track,
@@ -70,8 +69,7 @@ protected:
                         double                     c,
                         int                        n)
     {
-        dbuct_value_manifest_t m(visits, visits, value, value, rng, c,
-                           std::numeric_limits<size_t>::max(), -1);
+        dbuct_value_manifest_t m(visits, visits, value, value, rng, c, 0.0, -1);
 
         std::vector<int> path = {-1};
 

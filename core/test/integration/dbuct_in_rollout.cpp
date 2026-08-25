@@ -2,7 +2,6 @@
 // choose() in an episode, flips to true exactly when the expansion node is
 // encountered, and resets to false after terminate().
 
-#include <limits>
 #include <random>
 #include <unordered_map>
 #include <vector>
@@ -23,7 +22,7 @@ protected:
                           visits_t, visits_t, value_t, value_t,
                           position_walker,
                           std::vector<jump_t>, std::vector<jump_t>,
-                          std::mt19937, std::unordered_map>;
+                          std::mt19937>;
 };
 
 TEST_F(DbuctInRolloutTest, FlagTransitionsEpisodes1And2)
@@ -36,8 +35,7 @@ TEST_F(DbuctInRolloutTest, FlagTransitionsEpisodes1And2)
     visits_t                  visits;
     value_t                   value;
 
-    manifest_t m(visits, visits, value, value, rng, 1.0,
-                 std::numeric_limits<size_t>::max(), -1);
+    manifest_t m(visits, visits, value, value, rng, 1.0, 0.0, -1);
 
     // Episode 1: root has 0 visits → in_rollout flips on the very first choose().
     EXPECT_FALSE(m.in_rollout.is_in_rollout());

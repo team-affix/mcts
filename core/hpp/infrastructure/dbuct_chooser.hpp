@@ -12,9 +12,7 @@ template<
     typename INodeHandle,
     typename IChoice,
     typename IGetVisits,
-    typename IGetDispatches,
-    typename ISetDispatches,
-    typename IComputeBatchSize,
+    typename IGetGrant,
     typename IForestep,
     typename IGetTopFrame,
     typename IWalker,
@@ -27,46 +25,39 @@ template<
 >
 struct dbuct_chooser
 {
-    dbuct_chooser(IGetVisits&        get_visits,
-                  IGetDispatches&    get_dispatches,
-                  ISetDispatches&    set_dispatches,
-                  IComputeBatchSize& compute_batch_size,
-                  IForestep&         forestep,
-                  IGetTopFrame&      get_top_frame,
-                  IWalker&           walker,
-                  IPolicyChoose&     policy,
-                  IRolloutChoose&    rollout,
-                  IIsInRollout&      is_in_rollout,
-                  IEnterRollout&     enter_rollout);
+    dbuct_chooser(IGetVisits&     get_visits,
+                  IGetGrant&      get_grant,
+                  IForestep&      forestep,
+                  IGetTopFrame&   get_top_frame,
+                  IWalker&        walker,
+                  IPolicyChoose&  policy,
+                  IRolloutChoose& rollout,
+                  IIsInRollout&   is_in_rollout,
+                  IEnterRollout&  enter_rollout);
 
     IChoice choose(const IGetChoiceCount& get_choice_count,
                    const IGetChoiceAt&    get_choice_at);
 
 private:
-    IGetVisits&        get_visits_;
-    IGetDispatches&    get_dispatches_;
-    ISetDispatches&    set_dispatches_;
-    IComputeBatchSize& compute_batch_size_;
-    IForestep&         forestep_;
-    IGetTopFrame&      get_top_frame_;
-    IWalker&           walker_;
-    IPolicyChoose&     policy_;
-    IRolloutChoose&    rollout_;
-    IIsInRollout&      is_in_rollout_;
-    IEnterRollout&     enter_rollout_;
+    IGetVisits&     get_visits_;
+    IGetGrant&      get_grant_;
+    IForestep&      forestep_;
+    IGetTopFrame&   get_top_frame_;
+    IWalker&        walker_;
+    IPolicyChoose&  policy_;
+    IRolloutChoose& rollout_;
+    IIsInRollout&   is_in_rollout_;
+    IEnterRollout&  enter_rollout_;
 };
 
-template<typename INH, typename IC, typename IGVis,
-         typename IGD, typename ISD, typename IBS,
+template<typename INH, typename IC, typename IGVis, typename IGG,
          typename IFo, typename IGTF,
          typename IW, typename IGCC, typename IGCA,
          typename IPC, typename IRC,
          typename IIIR, typename IER>
-dbuct_chooser<INH, IC, IGVis, IGD, ISD, IBS, IFo, IGTF, IW, IGCC, IGCA, IPC, IRC, IIIR, IER>::dbuct_chooser(
+dbuct_chooser<INH, IC, IGVis, IGG, IFo, IGTF, IW, IGCC, IGCA, IPC, IRC, IIIR, IER>::dbuct_chooser(
         IGVis& get_visits,
-        IGD&   get_dispatches,
-        ISD&   set_dispatches,
-        IBS&   compute_batch_size,
+        IGG&   get_grant,
         IFo&   forestep,
         IGTF&  get_top_frame,
         IW&    walker,
@@ -75,9 +66,7 @@ dbuct_chooser<INH, IC, IGVis, IGD, ISD, IBS, IFo, IGTF, IW, IGCC, IGCA, IPC, IRC
         IIIR&  is_in_rollout,
         IER&   enter_rollout)
     : get_visits_(get_visits)
-    , get_dispatches_(get_dispatches)
-    , set_dispatches_(set_dispatches)
-    , compute_batch_size_(compute_batch_size)
+    , get_grant_(get_grant)
     , forestep_(forestep)
     , get_top_frame_(get_top_frame)
     , walker_(walker)
@@ -87,14 +76,13 @@ dbuct_chooser<INH, IC, IGVis, IGD, ISD, IBS, IFo, IGTF, IW, IGCC, IGCA, IPC, IRC
     , enter_rollout_(enter_rollout)
 {}
 
-template<typename INH, typename IC, typename IGVis,
-         typename IGD, typename ISD, typename IBS,
+template<typename INH, typename IC, typename IGVis, typename IGG,
          typename IFo, typename IGTF,
          typename IW, typename IGCC, typename IGCA,
          typename IPC, typename IRC,
          typename IIIR, typename IER>
 IC
-dbuct_chooser<INH, IC, IGVis, IGD, ISD, IBS, IFo, IGTF, IW, IGCC, IGCA, IPC, IRC, IIIR, IER>::choose(
+dbuct_chooser<INH, IC, IGVis, IGG, IFo, IGTF, IW, IGCC, IGCA, IPC, IRC, IIIR, IER>::choose(
         const IGCC& get_choice_count,
         const IGCA& get_choice_at)
 {
@@ -106,12 +94,8 @@ dbuct_chooser<INH, IC, IGVis, IGD, ISD, IBS, IFo, IGTF, IW, IGCC, IGCA, IPC, IRC
     IC  chosen       = policy_.policy_choose(current.handle, get_choice_count, get_choice_at);
     INH child_handle = walker_.walk(current.handle, chosen);
 
-    size_t current_dispatches = get_dispatches_.get_dispatches(current.handle);
-    size_t remaining_budget   = current.budget - current.visit_lump;
-    size_t grant_k = std::min(
-        compute_batch_size_.compute_batch_size(current_dispatches),
-        remaining_budget);
-    set_dispatches_.set_dispatches(current.handle, current_dispatches + 1);
+    size_t remaining_budget = current.budget - current.visit_lump;
+    size_t grant_k = std::min(get_grant_.get_grant(current.handle), remaining_budget);
 
     forestep_.forestep(dbuct_frame<INH>(child_handle, grant_k));
 

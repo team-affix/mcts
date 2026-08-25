@@ -1,8 +1,13 @@
-// Verifies grant_k = 1 + N / GII for several N values by observing the delta in
+// Verifies grant_k = 1 + floor(k * visits(parent)) by observing the delta in
 // bank.get_visits(root) after each camping grant period completes.  Root's visit
 // count only increases when a child frame backsteps to root, and increases by
 // exactly grant_k (the child's budget), making the jump in bank.get_visits(-1)
 // the sole public observable needed.
+//
+// Because the grant reads the parent's visit count, the per-period grants form a
+// closed-form recurrence:  V_next = V + 1 + floor(k * V), starting from V = 1
+// after the seeding episode.  The expectations below are that recurrence
+// unrolled by hand, not fitted to observed output.
 
 #include <random>
 #include <unordered_map>
@@ -24,7 +29,7 @@ protected:
                           visits_t, visits_t, value_t, value_t,
                           position_walker,
                           std::vector<jump_t>, std::vector<jump_t>,
-                          std::mt19937, std::unordered_map>;
+                          std::mt19937>;
 
     void run_episode(manifest_t&                m,
                      const std::vector<double>& track,
@@ -67,66 +72,89 @@ protected:
     }
 };
 
-TEST_F(DbuctGrantFormulaTest, GrantGrowsWithRootDispatchesGII3)
+TEST_F(DbuctGrantFormulaTest, GrantGrowsWithRootVisitsKHalf)
 {
-    // Single-path game: root → pos0 → OOB.
-    // Each grant period root dispatches pos0 exactly once (D increments by 1).
-    // grant_k = 1 + D_before / GII, verified via the delta in visits.get_visits(-1).
+    // Single-path game: root -> pos0 -> OOB.  Root is the only parent whose grant
+    // is under test, and root's visit count is frozen for the whole period, so
+    // grant_k = 1 + floor(0.5 * V) with V the count observed at period start.
+    //
+    // V:      1  2  3  4  6  9 14 21 31 47   <- grant paid out this period
+    // V_next: 2  4  7 11 17 26 40 61 92 139
     const std::vector<double> track = {1.0};
     const std::vector<jump_t> jumps = {1};
-    const size_t              GII   = 3;
+    const std::vector<size_t> expected_grants = {1, 2, 3, 4, 6, 9, 14, 21, 31, 47};
     std::mt19937              rng(0);
     visits_t                  visits;
     value_t                   value;
 
-    manifest_t m(visits, visits, value, value, rng, 0.0, GII, -1);
+    manifest_t m(visits, visits, value, value, rng, 0.0, 0.5, -1);
     std::vector<int> path = {-1};
 
-    // Seed root's initial visit (rollout phase; no UCB dispatch happens here).
+    // Seed root's initial visit; the grant here is 1 + floor(k * 0) = 1.
     run_grant_period(m, visits, track, jumps, path);
     ASSERT_EQ(visits.get_visits(-1), 1u) << "expected root to have 1 visit after seed";
 
-    // From here, every period involves exactly one UCB dispatch from root.
-    // Formula: grant_k = 1 + D_before / GII (integer division).
-    for (size_t period = 0; period < 10; ++period)
+    for (size_t period = 0; period < expected_grants.size(); ++period)
     {
-        const size_t D_before = m.dispatches.get_dispatches(-1);
         const size_t V_before = visits.get_visits(-1);
         run_grant_period(m, visits, track, jumps, path);
-        EXPECT_EQ(m.dispatches.get_dispatches(-1), D_before + 1)
-            << "dispatch count did not increment at period=" << period;
-        EXPECT_EQ(visits.get_visits(-1) - V_before, 1 + D_before / GII)
-            << "grant mismatch at period=" << period
-            << " D_before=" << D_before << " GII=" << GII;
+        EXPECT_EQ(visits.get_visits(-1) - V_before, expected_grants[period])
+            << "grant mismatch at period=" << period << " V_before=" << V_before;
     }
+
+    EXPECT_EQ(visits.get_visits(-1), 139u);
 }
 
-TEST_F(DbuctGrantFormulaTest, GrantGrowsWithRootDispatchesGII5)
+TEST_F(DbuctGrantFormulaTest, GrantGrowsWithRootVisitsKQuarter)
 {
+    // Same game, k = 0.25: the grant stays at 1 while floor(0.25 * V) is 0,
+    // i.e. for V = 1..3, then climbs.
+    //
+    // V:      1  1  1  2  2  3  3  4  5  6  8 10
+    // V_next: 2  3  4  6  8 11 14 18 23 29 37 47
     const std::vector<double> track = {1.0};
     const std::vector<jump_t> jumps = {1};
-    const size_t              GII   = 5;
+    const std::vector<size_t> expected_grants = {1, 1, 1, 2, 2, 3, 3, 4, 5, 6, 8, 10};
     std::mt19937              rng(0);
     visits_t                  visits;
     value_t                   value;
 
-    manifest_t m(visits, visits, value, value, rng, 0.0, GII, -1);
+    manifest_t m(visits, visits, value, value, rng, 0.0, 0.25, -1);
     std::vector<int> path = {-1};
 
-    // Seed root's initial visit (rollout phase; no UCB dispatch happens here).
     run_grant_period(m, visits, track, jumps, path);
     ASSERT_EQ(visits.get_visits(-1), 1u) << "expected root to have 1 visit after seed";
 
-    // GII=5: grant stays 1 for D=0..4, then rises by 1 every 5 dispatches.
-    for (size_t period = 0; period < 12; ++period)
+    for (size_t period = 0; period < expected_grants.size(); ++period)
     {
-        const size_t D_before = m.dispatches.get_dispatches(-1);
         const size_t V_before = visits.get_visits(-1);
         run_grant_period(m, visits, track, jumps, path);
-        EXPECT_EQ(m.dispatches.get_dispatches(-1), D_before + 1)
-            << "dispatch count did not increment at period=" << period;
-        EXPECT_EQ(visits.get_visits(-1) - V_before, 1 + D_before / GII)
-            << "grant mismatch at period=" << period
-            << " D_before=" << D_before << " GII=" << GII;
+        EXPECT_EQ(visits.get_visits(-1) - V_before, expected_grants[period])
+            << "grant mismatch at period=" << period << " V_before=" << V_before;
     }
+
+    EXPECT_EQ(visits.get_visits(-1), 47u);
+}
+
+TEST_F(DbuctGrantFormulaTest, ZeroKGrantsOneForever)
+{
+    // k = 0 is the vanilla-UCT setting: every period is a single episode.
+    const std::vector<double> track = {1.0};
+    const std::vector<jump_t> jumps = {1};
+    std::mt19937              rng(0);
+    visits_t                  visits;
+    value_t                   value;
+
+    manifest_t m(visits, visits, value, value, rng, 0.0, 0.0, -1);
+    std::vector<int> path = {-1};
+
+    for (size_t period = 0; period < 20; ++period)
+    {
+        const size_t V_before = visits.get_visits(-1);
+        run_grant_period(m, visits, track, jumps, path);
+        EXPECT_EQ(visits.get_visits(-1) - V_before, 1u)
+            << "grant mismatch at period=" << period;
+    }
+
+    EXPECT_EQ(visits.get_visits(-1), 20u);
 }

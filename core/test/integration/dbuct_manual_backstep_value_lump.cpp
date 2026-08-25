@@ -22,7 +22,7 @@ protected:
                           visits_t, visits_t, value_t, value_t,
                           position_walker,
                           std::vector<jump_t>, std::vector<jump_t>,
-                          std::mt19937, std::unordered_map>;
+                          std::mt19937>;
 
     void run_episode(manifest_t& m, const std::vector<jump_t>& jumps, std::vector<int>& path)
     {
@@ -55,7 +55,7 @@ TEST_F(DbuctManualBackstepValueLumpTest, ManualBackstepRollsValueLumpIntoRoot)
     visits_t                  visits;
     value_t                   value;
 
-    manifest_t m(visits, visits, value, value, rng, 0.0, 2, -1);
+    manifest_t m(visits, visits, value, value, rng, 0.0, 0.5, -1);
     std::vector<int> path = {-1};
 
     run_episode(m, jumps, path);

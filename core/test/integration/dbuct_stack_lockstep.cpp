@@ -21,7 +21,7 @@ protected:
                           visits_t, visits_t, value_t, value_t,
                           position_walker,
                           std::vector<jump_t>, std::vector<jump_t>,
-                          std::mt19937, std::unordered_map>;
+                          std::mt19937>;
 
     void run_episode(manifest_t& m, const std::vector<jump_t>& jumps)
     {
@@ -53,13 +53,16 @@ TEST_F(DbuctStackLockstepTest, FrameAndValueStacksShareTopHandle)
     visits_t                  visits;
     value_t                   value;
 
-    manifest_t m(visits, visits, value, value, rng, 0.0, 2, -1);
+    manifest_t m(visits, visits, value, value, rng, 0.0, 0.5, -1);
 
+    // With k=0.5 the first two episodes run at grant 1 and unwind completely; the
+    // third runs at grant 2 on both levels and leaves the chain camped on the OOB
+    // node, which is where the two stacks must still agree.
     run_episode(m, jumps);
     run_episode(m, jumps);
     run_episode(m, jumps);
 
-    EXPECT_EQ(m.frame_stack.size(), 2u);
-    EXPECT_EQ(m.frame_stack.top().handle, 0);
-    EXPECT_EQ(m.value_stack.top().handle, 0);
+    EXPECT_EQ(m.frame_stack.size(), 3u);
+    EXPECT_EQ(m.frame_stack.top().handle, 1);
+    EXPECT_EQ(m.value_stack.top().handle, 1);
 }

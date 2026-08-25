@@ -1,5 +1,5 @@
 // dbuct_chooser delegates to the rollout policy while in rollout, and otherwise
-// dispatches a sub-budget, foresteps a new frame, and enters rollout when the
+// grants a sub-budget, foresteps a new frame, and enters rollout when the
 // chosen child has never been visited.
 
 #include <cstddef>
@@ -24,19 +24,9 @@ struct MockGetVisits
     MOCK_METHOD(size_t, get_visits, (const int&), (const));
 };
 
-struct MockGetDispatches
+struct MockGetGrant
 {
-    MOCK_METHOD(size_t, get_dispatches, (const int&), (const));
-};
-
-struct MockSetDispatches
-{
-    MOCK_METHOD(void, set_dispatches, (const int&, size_t), ());
-};
-
-struct MockComputeBatchSize
-{
-    MOCK_METHOD(size_t, compute_batch_size, (size_t), (const));
+    MOCK_METHOD(size_t, get_grant, (const int&), (const));
 };
 
 struct MockForestep
@@ -76,9 +66,7 @@ class DbuctChooserTest : public ::testing::Test
 protected:
     monte_carlo::dbuct_frame<int> frame_{-1, 100};
     NiceMock<MockGetVisits>       get_visits;
-    NiceMock<MockGetDispatches>   get_dispatches;
-    StrictMock<MockSetDispatches> set_dispatches;
-    NiceMock<MockComputeBatchSize> compute_batch_size;
+    NiceMock<MockGetGrant>        get_grant;
     StrictMock<MockForestep>      forestep;
     NiceMock<MockGetTopFrame>     get_top_frame;
     position_walker               walker;
@@ -90,9 +78,7 @@ protected:
 
     monte_carlo::dbuct_chooser<int, jump_t,
                                  MockGetVisits,
-                                 MockGetDispatches,
-                                 MockSetDispatches,
-                                 MockComputeBatchSize,
+                                 MockGetGrant,
                                  MockForestep,
                                  MockGetTopFrame,
                                  position_walker,
@@ -103,9 +89,7 @@ protected:
                                  MockIsInRollout,
                                  MockEnterRollout> sut{
         get_visits,
-        get_dispatches,
-        set_dispatches,
-        compute_batch_size,
+        get_grant,
         forestep,
         get_top_frame,
         walker,
@@ -130,18 +114,32 @@ TEST_F(DbuctChooserTest, RolloutPhaseDelegatesToRolloutChoose)
     EXPECT_EQ(sut.choose(jumps_, jumps_), 1);
 }
 
-TEST_F(DbuctChooserTest, TreePhaseDispatchesAndForesteps)
+TEST_F(DbuctChooserTest, TreePhaseGrantsAndForesteps)
 {
     expect_tree_frame();
     ON_CALL(is_in_rollout, is_in_rollout()).WillByDefault(Return(false));
-    ON_CALL(get_dispatches, get_dispatches(-1)).WillByDefault(Return(0));
-    ON_CALL(compute_batch_size, compute_batch_size(0)).WillByDefault(Return(5));
     ON_CALL(get_visits, get_visits(0)).WillByDefault(Return(5));
 
     EXPECT_CALL(policy, policy_choose(-1, jumps_, jumps_)).WillOnce(Return(1));
-    EXPECT_CALL(set_dispatches, set_dispatches(-1, 1));
-    EXPECT_CALL(forestep, forestep(_));
+    EXPECT_CALL(get_grant, get_grant(-1)).WillOnce(Return(5));
+    EXPECT_CALL(forestep, forestep(monte_carlo::dbuct_frame<int>(0, 5)));
     EXPECT_CALL(rollout, rollout_choose(_, _)).Times(0);
+    EXPECT_CALL(enter_rollout, enter_rollout()).Times(0);
+
+    EXPECT_EQ(sut.choose(jumps_, jumps_), 1);
+}
+
+TEST_F(DbuctChooserTest, TreePhaseClampsGrantToRemainingBudget)
+{
+    frame_ = monte_carlo::dbuct_frame<int>(-1, 4);
+    frame_.visit_lump = 3;
+    expect_tree_frame();
+    ON_CALL(is_in_rollout, is_in_rollout()).WillByDefault(Return(false));
+    ON_CALL(get_visits, get_visits(0)).WillByDefault(Return(5));
+
+    EXPECT_CALL(policy, policy_choose(-1, jumps_, jumps_)).WillOnce(Return(1));
+    EXPECT_CALL(get_grant, get_grant(-1)).WillOnce(Return(9));
+    EXPECT_CALL(forestep, forestep(monte_carlo::dbuct_frame<int>(0, 1)));
     EXPECT_CALL(enter_rollout, enter_rollout()).Times(0);
 
     EXPECT_EQ(sut.choose(jumps_, jumps_), 1);
@@ -151,13 +149,11 @@ TEST_F(DbuctChooserTest, TreePhaseEntersRolloutOnUnvisitedChild)
 {
     expect_tree_frame();
     ON_CALL(is_in_rollout, is_in_rollout()).WillByDefault(Return(false));
-    ON_CALL(get_dispatches, get_dispatches(-1)).WillByDefault(Return(0));
-    ON_CALL(compute_batch_size, compute_batch_size(0)).WillByDefault(Return(5));
     ON_CALL(get_visits, get_visits(0)).WillByDefault(Return(0));
 
     EXPECT_CALL(policy, policy_choose(-1, jumps_, jumps_)).WillOnce(Return(1));
-    EXPECT_CALL(set_dispatches, set_dispatches(-1, 1));
-    EXPECT_CALL(forestep, forestep(_));
+    EXPECT_CALL(get_grant, get_grant(-1)).WillOnce(Return(5));
+    EXPECT_CALL(forestep, forestep(monte_carlo::dbuct_frame<int>(0, 5)));
     EXPECT_CALL(enter_rollout, enter_rollout()).Times(1);
 
     EXPECT_EQ(sut.choose(jumps_, jumps_), 1);

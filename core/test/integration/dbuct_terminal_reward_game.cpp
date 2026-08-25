@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <iomanip>
 #include <iostream>
-#include <limits>
 #include <random>
 #include <unordered_map>
 #include <vector>
@@ -27,7 +26,7 @@ protected:
                           visits_t, visits_t, value_t, value_t,
                           position_walker,
                           std::vector<jump_t>, std::vector<jump_t>,
-                          std::mt19937, std::unordered_map>;
+                          std::mt19937>;
 
     static constexpr double kTolerance = 0.001;
 
@@ -37,11 +36,11 @@ protected:
                const std::vector<jump_t>& jumps,
                std::mt19937&              rng,
                double                     exploration_constant,
-               size_t                     grant_increment_interval,
+               double                     grant_k,
                int                        training_sims)
     {
         manifest_t m(visits, visits, value, value, rng, exploration_constant,
-                     grant_increment_interval, -1);
+                     grant_k, -1);
 
         std::vector<int> path = {-1};
 
@@ -75,8 +74,7 @@ protected:
                       const std::vector<jump_t>& jumps,
                       std::mt19937&              rng)
     {
-        manifest_t m(visits, visits, value, value, rng, 0.0,
-                     std::numeric_limits<size_t>::max(), -1);
+        manifest_t m(visits, visits, value, value, rng, 0.0, 0.0, -1);
 
         int    position = -1;
         double reward   = 0.0;
@@ -102,8 +100,7 @@ protected:
                                      size_t                     track_length,
                                      const std::vector<jump_t>& move_amounts,
                                      int                        training_sims,
-                                     size_t                     gii =
-                                         std::numeric_limits<size_t>::max())
+                                     double                     grant_k)
     {
         std::mt19937                           rng(seed);
         std::uniform_real_distribution<double> urd(-10, 10);
@@ -120,7 +117,7 @@ protected:
 
         visits_t visits;
         value_t  value;
-        train(visits, value, track, move_amounts, rng, exploration_constant, gii, training_sims);
+        train(visits, value, track, move_amounts, rng, exploration_constant, grant_k, training_sims);
 
         const double exploitative_score =
             greedy_run(visits, value, track, move_amounts, rng);
@@ -130,39 +127,40 @@ protected:
     }
 };
 
-// gii = SIZE_MAX  =>  vanilla UCT.
-TEST_F(DbuctTerminalRewardGameTest, VanillaGIISeed40Track10Moves123)
+// k = 0  =>  every grant is 1, i.e. vanilla UCT.
+TEST_F(DbuctTerminalRewardGameTest, VanillaKSeed40Track10Moves123)
 {
-    verify_converges_to_optimal(40, 10, {1, 2, 3}, 10000);
+    verify_converges_to_optimal(40, 10, {1, 2, 3}, 10000, 0.0);
 }
 
-TEST_F(DbuctTerminalRewardGameTest, VanillaGIISeed44Track10Moves25)
+TEST_F(DbuctTerminalRewardGameTest, VanillaKSeed44Track10Moves25)
 {
-    verify_converges_to_optimal(44, 10, {2, 5}, 10000);
+    verify_converges_to_optimal(44, 10, {2, 5}, 10000, 0.0);
 }
 
-TEST_F(DbuctTerminalRewardGameTest, VanillaGIISeed46Track15Moves123)
+TEST_F(DbuctTerminalRewardGameTest, VanillaKSeed46Track15Moves123)
 {
-    verify_converges_to_optimal(46, 15, {1, 2, 3}, 20000);
+    verify_converges_to_optimal(46, 15, {1, 2, 3}, 20000, 0.0);
 }
 
-TEST_F(DbuctTerminalRewardGameTest, VanillaGIISeed49Track20Moves123)
+TEST_F(DbuctTerminalRewardGameTest, VanillaKSeed49Track20Moves123)
 {
-    verify_converges_to_optimal(49, 20, {1, 2, 3}, 50000);
+    verify_converges_to_optimal(49, 20, {1, 2, 3}, 50000, 0.0);
 }
 
-// Finite gii.
-TEST_F(DbuctTerminalRewardGameTest, GII10Seed40Track10Moves123)
+// Non-zero k: grants scale with visits, so nodes camp.  These k values are the
+// visit-proportional analogue of the old grant-increment intervals 10, 5 and 3.
+TEST_F(DbuctTerminalRewardGameTest, KTenthSeed40Track10Moves123)
 {
-    verify_converges_to_optimal(40, 10, {1, 2, 3}, 10000, 10);
+    verify_converges_to_optimal(40, 10, {1, 2, 3}, 10000, 0.1);
 }
 
-TEST_F(DbuctTerminalRewardGameTest, GII5Seed44Track10Moves25)
+TEST_F(DbuctTerminalRewardGameTest, KFifthSeed44Track10Moves25)
 {
-    verify_converges_to_optimal(44, 10, {2, 5}, 10000, 5);
+    verify_converges_to_optimal(44, 10, {2, 5}, 10000, 0.2);
 }
 
-TEST_F(DbuctTerminalRewardGameTest, GII3Seed46Track15Moves123)
+TEST_F(DbuctTerminalRewardGameTest, KThirdSeed46Track15Moves123)
 {
-    verify_converges_to_optimal(46, 15, {1, 2, 3}, 20000, 3);
+    verify_converges_to_optimal(46, 15, {1, 2, 3}, 20000, 1.0 / 3.0);
 }
