@@ -13,6 +13,7 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 #include "infrastructure/dbuct_value_manifest.hpp"
+#include "infrastructure/value_bounds.hpp"
 #include "infrastructure/value_table.hpp"
 #include "infrastructure/visits_table.hpp"
 #include "optimal_scores.hpp"
@@ -23,9 +24,10 @@ class DbuctCoinCollectingGameTest : public ::testing::Test
 protected:
     using visits_t   = monte_carlo::visits_table<std::vector<int>, path_unordered_map>;
     using value_t    = monte_carlo::value_table<std::vector<int>, double, path_unordered_map>;
+    using bounds_t   = monte_carlo::value_bounds<double>;
     using manifest_t = monte_carlo::dbuct_value_manifest<
                           std::vector<int>, jump_t, double,
-                          visits_t, visits_t, value_t, value_t,
+                          visits_t, visits_t, value_t, value_t, bounds_t, bounds_t,
                           path_walker,
                           std::vector<jump_t>, std::vector<jump_t>,
                           std::mt19937>;
@@ -34,6 +36,7 @@ protected:
 
     void train(visits_t&                  visits,
                value_t&                   value,
+               bounds_t&                  bounds,
                const std::vector<double>& track,
                const std::vector<jump_t>& jumps,
                std::mt19937&              rng,
@@ -43,7 +46,7 @@ protected:
     {
         std::vector<int> root = {-1};
 
-        manifest_t m(visits, visits, value, value, rng, exploration_constant,
+        manifest_t m(visits, visits, value, value, bounds, bounds, rng, exploration_constant,
                      grant_k, root);
 
         std::vector<int> path = root;
@@ -77,13 +80,14 @@ protected:
 
     double greedy_run(visits_t&                  visits,
                       value_t&                   value,
+                      bounds_t&                  bounds,
                       const std::vector<double>& track,
                       const std::vector<jump_t>& jumps,
                       std::mt19937&              rng)
     {
         std::vector<int> root = {-1};
 
-        manifest_t m(visits, visits, value, value, rng, 0.0, 0.0, root);
+        manifest_t m(visits, visits, value, value, bounds, bounds, rng, 0.0, 0.0, root);
 
         int    position = -1;
         double ep_score = 0.0;
@@ -119,14 +123,16 @@ protected:
             std::cerr << " " << std::fixed << std::setprecision(3) << v;
         std::cerr << "\n";
 
-        constexpr double exploration_constant = 100.0;
+        // Normalized c: the raw c of 100 this game used before, over its score range of about 140.
+        constexpr double exploration_constant = 0.7;
 
         visits_t visits;
         value_t  value;
-        train(visits, value, track, move_amounts, rng, exploration_constant, grant_k, training_sims);
+        bounds_t bounds;
+        train(visits, value, bounds, track, move_amounts, rng, exploration_constant, grant_k, training_sims);
 
         const double exploitative_score =
-            greedy_run(visits, value, track, move_amounts, rng);
+            greedy_run(visits, value, bounds, track, move_amounts, rng);
         const double optimal = optimal_cumulative_score(track, move_amounts);
 
         EXPECT_NEAR(exploitative_score, optimal, kTolerance);

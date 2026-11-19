@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 #include "infrastructure/uct_value_manifest.hpp"
+#include "infrastructure/value_bounds.hpp"
 #include "infrastructure/value_table.hpp"
 #include "infrastructure/visits_table.hpp"
 #include "walkers.hpp"
@@ -17,9 +18,10 @@ class UctInRolloutTest : public ::testing::Test
 protected:
     using visits_t   = monte_carlo::visits_table<int, std::unordered_map>;
     using value_t    = monte_carlo::value_table<int, double, std::unordered_map>;
+    using bounds_t   = monte_carlo::value_bounds<double>;
     using manifest_t = monte_carlo::uct_value_manifest<
                           int, jump_t, double,
-                          visits_t, visits_t, value_t, value_t,
+                          visits_t, visits_t, value_t, value_t, bounds_t, bounds_t,
                           position_walker,
                           std::vector<jump_t>, std::vector<jump_t>,
                           std::mt19937>;
@@ -32,9 +34,10 @@ TEST_F(UctInRolloutTest, FlagTransitionsEpisodes1And2)
     std::mt19937              rng(0);
     visits_t                  visits;
     value_t                   value;
+    bounds_t                  bounds;
 
     // One manifest drives both episodes: terminate() restores the cursor and path.
-    manifest_t m(visits, visits, value, value, rng, 1.0, -1);
+    manifest_t m(visits, visits, value, value, bounds, bounds, rng, 1.0, -1);
 
     // Episode 1: root has 0 visits, so the flag flips at the first expansion.
     EXPECT_FALSE(m.in_rollout.is_in_rollout());

@@ -37,6 +37,8 @@ template<
     typename ISetVisits,
     typename IGetValue,
     typename ISetValue,
+    typename IIncludeValue,
+    typename INormalizeValue,
     typename IWalker,
     typename IGetChoiceCount,
     typename IGetChoiceAt,
@@ -56,7 +58,7 @@ struct best_path_value_manifest
     using visit_creditor_t      = uct_visit_creditor<INodeHandle, path_t, IGetVisits, ISetVisits>;
     using value_creditor_t      = uct_value_creditor<visit_creditor_t, path_t, value_update_t>;
     using policy_t              = ucb1<INodeHandle, IChoice, IFloat,
-                                       IGetVisits, IGetValue, IWalker,
+                                       IGetVisits, IGetValue, IIncludeValue, INormalizeValue, IWalker,
                                        exploration_t, IGetChoiceCount, IGetChoiceAt>;
     using chooser_t             = uct_chooser<INodeHandle, IChoice, IGetVisits, IWalker,
                                               IGetChoiceCount, IGetChoiceAt,
@@ -75,13 +77,15 @@ struct best_path_value_manifest
                                                  in_rollout_flag>;
     using terminator_t          = best_path_terminator<grafter_t, backprop_terminator_t>;
 
-    best_path_value_manifest(IGetVisits& get_visits,
-                             ISetVisits& set_visits,
-                             IGetValue&  get_value,
-                             ISetValue&  set_value,
-                             IRndGen&    rnd_gen,
-                             IFloat      exploration_constant,
-                             INodeHandle root);
+    best_path_value_manifest(IGetVisits&      get_visits,
+                             ISetVisits&      set_visits,
+                             IGetValue&       get_value,
+                             ISetValue&       set_value,
+                             IIncludeValue&   include_value,
+                             INormalizeValue& normalize_value,
+                             IRndGen&         rnd_gen,
+                             IFloat           exploration_constant,
+                             INodeHandle      root);
 
     IWalker               walker;
     rollout_t             rollout;
@@ -103,13 +107,15 @@ struct best_path_value_manifest
 };
 
 template<typename INH, typename IC, typename IF,
-         typename IGVis, typename ISVis, typename IGVal, typename ISVal,
+         typename IGVis, typename ISVis, typename IGVal, typename ISVal, typename IIV, typename INV,
          typename IW, typename IGCC, typename IGCA, typename IRG>
-best_path_value_manifest<INH, IC, IF, IGVis, ISVis, IGVal, ISVal, IW, IGCC, IGCA, IRG>::best_path_value_manifest(
+best_path_value_manifest<INH, IC, IF, IGVis, ISVis, IGVal, ISVal, IIV, INV, IW, IGCC, IGCA, IRG>::best_path_value_manifest(
         IGVis& get_visits,
         ISVis& set_visits,
         IGVal& get_value,
         ISVal& set_value,
+        IIV&   include_value,
+        INV&   normalize_value,
         IRG&   rnd_gen,
         IF     exploration_constant,
         INH    root)
@@ -124,7 +130,7 @@ best_path_value_manifest<INH, IC, IF, IGVis, ISVis, IGVal, ISVal, IW, IGCC, IGCA
     , backprop_path(root)
     , visit_creditor(backprop_path, get_visits, set_visits)
     , value_creditor(visit_creditor, backprop_path, value_update)
-    , policy(get_visits, get_value, walker, this->exploration_constant)
+    , policy(get_visits, get_value, include_value, normalize_value, walker, this->exploration_constant)
     , in_rollout()
     , chooser(get_visits, walker, policy, rollout_logger,
               cursor, cursor, backprop_path,
