@@ -9,6 +9,7 @@
 #include <gmock/gmock.h>
 #include "infrastructure/dbuct_value_manifest.hpp"
 #include "infrastructure/uct_value_manifest.hpp"
+#include "infrastructure/value_bounds.hpp"
 #include "infrastructure/value_table.hpp"
 #include "infrastructure/visits_table.hpp"
 #include "walkers.hpp"
@@ -18,15 +19,16 @@ class DbuctStatEquivalenceTest : public ::testing::Test
 protected:
     using visits_t        = monte_carlo::visits_table<int, std::unordered_map>;
     using value_t         = monte_carlo::value_table<int, double, std::unordered_map>;
+    using bounds_t        = monte_carlo::value_bounds<double>;
     using uct_value_manifest_t = monte_carlo::uct_value_manifest<
                                int, jump_t, double,
-                               visits_t, visits_t, value_t, value_t,
+                               visits_t, visits_t, value_t, value_t, bounds_t, bounds_t,
                                position_walker,
                                std::vector<jump_t>, std::vector<jump_t>,
                                std::mt19937>;
     using dbuct_value_manifest_t = monte_carlo::dbuct_value_manifest<
                                int, jump_t, double,
-                               visits_t, visits_t, value_t, value_t,
+                               visits_t, visits_t, value_t, value_t, bounds_t, bounds_t,
                                position_walker,
                                std::vector<jump_t>, std::vector<jump_t>,
                                std::mt19937>;
@@ -35,12 +37,13 @@ protected:
     // in-bounds position's track value).
     void uct_episode(visits_t&                  visits,
                      value_t&                   value,
+                     bounds_t&                  bounds,
                      const std::vector<double>& track,
                      const std::vector<jump_t>& jumps,
                      std::mt19937&              rng,
                      double                     c)
     {
-        uct_value_manifest_t m(visits, visits, value, value, rng, c, -1);
+        uct_value_manifest_t m(visits, visits, value, value, bounds, bounds, rng, c, -1);
 
         int    position = -1;
         double reward   = 0.0;
@@ -63,13 +66,14 @@ protected:
     // N dbuct episodes with k=0 (≡ vanilla UCT: every grant is 1).
     void dbuct_episodes(visits_t&                  visits,
                         value_t&                   value,
+                        bounds_t&                  bounds,
                         const std::vector<double>& track,
                         const std::vector<jump_t>& jumps,
                         std::mt19937&              rng,
                         double                     c,
                         int                        n)
     {
-        dbuct_value_manifest_t m(visits, visits, value, value, rng, c, 0.0, -1);
+        dbuct_value_manifest_t m(visits, visits, value, value, bounds, bounds, rng, c, 0.0, -1);
 
         std::vector<int> path = {-1};
 
@@ -108,10 +112,11 @@ TEST_F(DbuctStatEquivalenceTest, MatchesUctSeed100Track5Moves12)
     std::mt19937 rng1(100), rng2(100);
     visits_t     uct_visits,   dbuct_visits;
     value_t      uct_value,    dbuct_value;
+    bounds_t     uct_bounds,   dbuct_bounds;
 
     for (int i = 0; i < N; ++i)
-        uct_episode(uct_visits, uct_value, track, jumps, rng1, c);
-    dbuct_episodes(dbuct_visits, dbuct_value, track, jumps, rng2, c, N);
+        uct_episode(uct_visits, uct_value, uct_bounds, track, jumps, rng1, c);
+    dbuct_episodes(dbuct_visits, dbuct_value, dbuct_bounds, track, jumps, rng2, c, N);
 
     for (int pos = -1; pos < static_cast<int>(track.size()); ++pos)
     {
@@ -132,10 +137,11 @@ TEST_F(DbuctStatEquivalenceTest, MatchesUctSeed200Track4Moves13)
     std::mt19937 rng1(200), rng2(200);
     visits_t     uct_visits,   dbuct_visits;
     value_t      uct_value,    dbuct_value;
+    bounds_t     uct_bounds,   dbuct_bounds;
 
     for (int i = 0; i < N; ++i)
-        uct_episode(uct_visits, uct_value, track, jumps, rng1, c);
-    dbuct_episodes(dbuct_visits, dbuct_value, track, jumps, rng2, c, N);
+        uct_episode(uct_visits, uct_value, uct_bounds, track, jumps, rng1, c);
+    dbuct_episodes(dbuct_visits, dbuct_value, dbuct_bounds, track, jumps, rng2, c, N);
 
     for (int pos = -1; pos < static_cast<int>(track.size()); ++pos)
     {
@@ -156,10 +162,11 @@ TEST_F(DbuctStatEquivalenceTest, MatchesUctSeed300Track6Moves123)
     std::mt19937 rng1(300), rng2(300);
     visits_t     uct_visits,   dbuct_visits;
     value_t      uct_value,    dbuct_value;
+    bounds_t     uct_bounds,   dbuct_bounds;
 
     for (int i = 0; i < N; ++i)
-        uct_episode(uct_visits, uct_value, track, jumps, rng1, c);
-    dbuct_episodes(dbuct_visits, dbuct_value, track, jumps, rng2, c, N);
+        uct_episode(uct_visits, uct_value, uct_bounds, track, jumps, rng1, c);
+    dbuct_episodes(dbuct_visits, dbuct_value, dbuct_bounds, track, jumps, rng2, c, N);
 
     for (int pos = -1; pos < static_cast<int>(track.size()); ++pos)
     {

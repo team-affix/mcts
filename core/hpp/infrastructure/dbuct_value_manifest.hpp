@@ -33,6 +33,8 @@ template<
     typename ISetVisits,
     typename IGetValue,
     typename ISetValue,
+    typename IIncludeValue,
+    typename INormalizeValue,
     typename IWalker,
     typename IGetChoiceCount,
     typename IGetChoiceAt,
@@ -64,7 +66,7 @@ struct dbuct_value_manifest
     using value_creditor_t = dbuct_value_creditor<visit_creditor_t, value_stack_t,
                                                   value_adder_t, delta_t>;
     using policy_t        = ucb1<INodeHandle, IChoice, IFloat,
-                                 IGetVisits, IGetValue, IWalker,
+                                 IGetVisits, IGetValue, IIncludeValue, INormalizeValue, IWalker,
                                  exploration_t, IGetChoiceCount, IGetChoiceAt>;
     using chooser_t       = dbuct_chooser<INodeHandle, IChoice,
                                           IGetVisits, grant_t,
@@ -79,14 +81,16 @@ struct dbuct_value_manifest
                                              value_creditor_t,
                                              in_rollout_flag>;
 
-    dbuct_value_manifest(IGetVisits& get_visits,
-                         ISetVisits& set_visits,
-                         IGetValue&  get_value,
-                         ISetValue&  set_value,
-                         IRndGen&    rnd_gen,
-                         IFloat      exploration_constant,
-                         IFloat      grant_k,
-                         INodeHandle root);
+    dbuct_value_manifest(IGetVisits&      get_visits,
+                         ISetVisits&      set_visits,
+                         IGetValue&       get_value,
+                         ISetValue&       set_value,
+                         IIncludeValue&   include_value,
+                         INormalizeValue& normalize_value,
+                         IRndGen&         rnd_gen,
+                         IFloat           exploration_constant,
+                         IFloat           grant_k,
+                         INodeHandle      root);
 
     IWalker                   walker;
     rollout_t                 rollout;
@@ -108,13 +112,15 @@ struct dbuct_value_manifest
 };
 
 template<typename INH, typename IC, typename IF,
-         typename IGVis, typename ISVis, typename IGVal, typename ISVal,
+         typename IGVis, typename ISVis, typename IGVal, typename ISVal, typename IIV, typename INV,
          typename IW, typename IGCC, typename IGCA, typename IRG>
-dbuct_value_manifest<INH, IC, IF, IGVis, ISVis, IGVal, ISVal, IW, IGCC, IGCA, IRG>::dbuct_value_manifest(
+dbuct_value_manifest<INH, IC, IF, IGVis, ISVis, IGVal, ISVal, IIV, INV, IW, IGCC, IGCA, IRG>::dbuct_value_manifest(
         IGVis& get_visits,
         ISVis& set_visits,
         IGVal& get_value,
         ISVal& set_value,
+        IIV&   include_value,
+        INV&   normalize_value,
         IRG&   rnd_gen,
         IF     exploration_constant,
         IF     grant_k,
@@ -133,7 +139,7 @@ dbuct_value_manifest<INH, IC, IF, IGVis, ISVis, IGVal, ISVal, IW, IGCC, IGCA, IR
                              value_stack, value_stack, value_stack, value_adder)
     , visit_creditor(visit_adder)
     , value_creditor(visit_creditor, value_stack, value_adder, delta)
-    , policy(get_visits, get_value, walker, this->exploration_constant)
+    , policy(get_visits, get_value, include_value, normalize_value, walker, this->exploration_constant)
     , in_rollout()
     , chooser(get_visits, grant,
               value_stack_controller, frame_stack,

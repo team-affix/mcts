@@ -16,6 +16,7 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 #include "infrastructure/best_path_value_manifest.hpp"
+#include "infrastructure/value_bounds.hpp"
 #include "infrastructure/value_table.hpp"
 #include "infrastructure/visits_table.hpp"
 #include "optimal_scores.hpp"
@@ -26,9 +27,10 @@ class BestPathTerminalRewardGameTest : public ::testing::Test
 protected:
     using visits_t   = monte_carlo::visits_table<int, std::unordered_map>;
     using value_t    = monte_carlo::value_table<int, double, std::unordered_map>;
+    using bounds_t   = monte_carlo::value_bounds<double>;
     using manifest_t = monte_carlo::best_path_value_manifest<
                           int, jump_t, double,
-                          visits_t, visits_t, value_t, value_t,
+                          visits_t, visits_t, value_t, value_t, bounds_t, bounds_t,
                           position_walker,
                           std::vector<jump_t>, std::vector<jump_t>,
                           std::mt19937>;
@@ -38,12 +40,13 @@ protected:
     double simulate_once(
         visits_t&                  visits,
         value_t&                   value,
+        bounds_t&                  bounds,
         const std::vector<double>& track,
         const std::vector<jump_t>& jumps,
         std::mt19937&              rng,
         double                     exploration_constant)
     {
-        manifest_t m(visits, visits, value, value, rng, exploration_constant, -1);
+        manifest_t m(visits, visits, value, value, bounds, bounds, rng, exploration_constant, -1);
 
         int    position = -1;
         double reward   = 0.0;
@@ -82,16 +85,18 @@ protected:
             std::cerr << " " << std::fixed << std::setprecision(3) << v;
         std::cerr << "\n";
 
-        constexpr double exploration_constant = 100.0;
+        // Normalized c: the raw c of 100 this game used before, over its reward range of 20.
+        constexpr double exploration_constant = 5.0;
 
         visits_t visits;
         value_t  value;
+        bounds_t bounds;
 
         for (int i = 0; i < training_sims; ++i)
-            simulate_once(visits, value, track, move_amounts, rng, exploration_constant);
+            simulate_once(visits, value, bounds, track, move_amounts, rng, exploration_constant);
 
         const double exploitative_score =
-            simulate_once(visits, value, track, move_amounts, rng, 0.0);
+            simulate_once(visits, value, bounds, track, move_amounts, rng, 0.0);
         const double optimal = optimal_last_position_score(track, move_amounts);
 
         EXPECT_NEAR(exploitative_score, optimal, kTolerance);

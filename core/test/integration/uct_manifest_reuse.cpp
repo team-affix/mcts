@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 #include "infrastructure/uct_value_manifest.hpp"
+#include "infrastructure/value_bounds.hpp"
 #include "infrastructure/value_table.hpp"
 #include "infrastructure/visits_table.hpp"
 #include "walkers.hpp"
@@ -17,9 +18,10 @@ class UctManifestReuseTest : public ::testing::Test
 protected:
     using visits_t   = monte_carlo::visits_table<int, std::unordered_map>;
     using value_t    = monte_carlo::value_table<int, double, std::unordered_map>;
+    using bounds_t   = monte_carlo::value_bounds<double>;
     using manifest_t = monte_carlo::uct_value_manifest<
                           int, jump_t, double,
-                          visits_t, visits_t, value_t, value_t,
+                          visits_t, visits_t, value_t, value_t, bounds_t, bounds_t,
                           position_walker,
                           std::vector<jump_t>, std::vector<jump_t>,
                           std::mt19937>;
@@ -57,10 +59,11 @@ TEST_F(UctManifestReuseTest, ReusedManifestMatchesFreshManifestPerEpisode)
 
     visits_t     reused_visits, fresh_visits;
     value_t      reused_value,  fresh_value;
+    bounds_t     reused_bounds, fresh_bounds;
     std::mt19937 reused_rng(7), fresh_rng(7);
 
     {
-        manifest_t m(reused_visits, reused_visits, reused_value, reused_value,
+        manifest_t m(reused_visits, reused_visits, reused_value, reused_value, reused_bounds, reused_bounds,
                      reused_rng, c, -1);
 
         for (int i = 0; i < episodes; ++i)
@@ -69,7 +72,7 @@ TEST_F(UctManifestReuseTest, ReusedManifestMatchesFreshManifestPerEpisode)
 
     for (int i = 0; i < episodes; ++i)
     {
-        manifest_t m(fresh_visits, fresh_visits, fresh_value, fresh_value,
+        manifest_t m(fresh_visits, fresh_visits, fresh_value, fresh_value, fresh_bounds, fresh_bounds,
                      fresh_rng, c, -1);
         run_episode(m, track, jumps);
     }

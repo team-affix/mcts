@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 #include "infrastructure/dbuct_value_manifest.hpp"
+#include "infrastructure/value_bounds.hpp"
 #include "infrastructure/value_table.hpp"
 #include "infrastructure/visits_table.hpp"
 #include "walkers.hpp"
@@ -16,9 +17,10 @@ class DbuctSingleEpisodeCreditTest : public ::testing::Test
 protected:
     using visits_t   = monte_carlo::visits_table<int, std::unordered_map>;
     using value_t    = monte_carlo::value_table<int, double, std::unordered_map>;
+    using bounds_t   = monte_carlo::value_bounds<double>;
     using manifest_t = monte_carlo::dbuct_value_manifest<
                           int, jump_t, double,
-                          visits_t, visits_t, value_t, value_t,
+                          visits_t, visits_t, value_t, value_t, bounds_t, bounds_t,
                           position_walker,
                           std::vector<jump_t>, std::vector<jump_t>,
                           std::mt19937>;
@@ -30,8 +32,9 @@ TEST_F(DbuctSingleEpisodeCreditTest, SeedEpisodeCreditsExpansionNodeAndRoot)
     std::mt19937              rng(0);
     visits_t                  visits;
     value_t                   value;
+    bounds_t                  bounds;
 
-    manifest_t m(visits, visits, value, value, rng, 1.0, 0.0, -1);
+    manifest_t m(visits, visits, value, value, bounds, bounds, rng, 1.0, 0.0, -1);
 
     m.chooser.choose(jumps, jumps);
     m.chooser.choose(jumps, jumps);
