@@ -1,6 +1,9 @@
 #ifndef MCTS_HPP
 #define MCTS_HPP
 
+#include "infrastructure/best_path_grafter.hpp"
+#include "infrastructure/best_path_terminator.hpp"
+#include "infrastructure/best_path_value_manifest.hpp"
 #include "infrastructure/dbuct_chooser.hpp"
 #include "infrastructure/dbuct_frame_stack.hpp"
 #include "infrastructure/dbuct_frame_stack_controller.hpp"
@@ -14,6 +17,8 @@
 #include "infrastructure/dbuct_visit_creditor.hpp"
 #include "infrastructure/in_rollout_flag.hpp"
 #include "infrastructure/random_rollout.hpp"
+#include "infrastructure/rollout_choice_log.hpp"
+#include "infrastructure/rollout_choice_logger.hpp"
 #include "infrastructure/ucb1.hpp"
 #include "infrastructure/uct_backprop_path.hpp"
 #include "infrastructure/uct_chooser.hpp"
