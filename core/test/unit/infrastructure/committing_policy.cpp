@@ -1,8 +1,9 @@
-// committing_policy commits the frontier to its most visited child once the
+// committing_policy commits the frontier to the child its finder picks once the
 // commit condition holds for the visits since it became the frontier, and
 // otherwise chooses through the policy it wraps.
 
 #include <cstddef>
+#include <optional>
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 #include "infrastructure/committing_policy.hpp"
@@ -49,6 +50,11 @@ struct MockReachCondition
     MOCK_METHOD(bool, reached, (size_t), (const));
 };
 
+struct MockFindCommitChild
+{
+    MOCK_METHOD(std::optional<int>, find, (const int&, const stub_choice_count&, const stub_choice_at&), (const));
+};
+
 struct MockCommit
 {
     MOCK_METHOD(void, commit, (const int&, const int&, const int&, size_t), ());
@@ -60,7 +66,7 @@ struct MockPolicyChoose
 };
 
 using policy_t = monte_carlo::committing_policy<int, int, MockGetVisits, MockWalker, MockGetFrontier,
-                                                MockGetFrontierBaseVisits, MockReachCondition, MockCommit,
+                                                MockGetFrontierBaseVisits, MockReachCondition, MockFindCommitChild, MockCommit,
                                                 MockPolicyChoose, stub_choice_count, stub_choice_at>;
 
 }
@@ -75,9 +81,11 @@ protected:
     NiceMock<MockGetFrontier>           get_frontier;
     NiceMock<MockGetFrontierBaseVisits> get_frontier_base_visits;
     NiceMock<MockReachCondition>        reach_condition;
+    NiceMock<MockFindCommitChild>       find_commit_child;
     NiceMock<MockCommit>                commit;
     NiceMock<MockPolicyChoose>          policy;
-    policy_t sut{get_visits, walker, get_frontier, get_frontier_base_visits, reach_condition, commit, policy};
+    policy_t sut{get_visits, walker, get_frontier, get_frontier_base_visits, reach_condition, find_commit_child,
+                 commit, policy};
     stub_choice_count count;
     stub_choice_at    at;
 
@@ -91,6 +99,7 @@ protected:
         for (int choice = 0; choice <= 20; choice += 10)
             ON_CALL(walker, walk(kFrontier, choice)).WillByDefault(Return(100 + choice));
         set_child_visits(30, 50, 20);
+        ON_CALL(find_commit_child, find(kFrontier, _, _)).WillByDefault(Return(std::optional<int>(10)));
     }
 
     void set_child_visits(size_t first, size_t second, size_t third)
@@ -124,7 +133,7 @@ TEST_F(CommittingPolicyTest, BeforeTheConditionHoldsTheFrontierChoosesThroughThe
     EXPECT_EQ(sut.policy_choose(kFrontier, count, at), 20);
 }
 
-TEST_F(CommittingPolicyTest, OnceTheConditionHoldsTheMostVisitedChildIsCommitted)
+TEST_F(CommittingPolicyTest, OnceTheConditionHoldsTheFoundChildIsCommittedWithItsVisits)
 {
     EXPECT_CALL(commit, commit(kFrontier, 10, 110, 50u));
     EXPECT_CALL(policy, policy_choose(_, _, _)).Times(0);
@@ -132,25 +141,26 @@ TEST_F(CommittingPolicyTest, OnceTheConditionHoldsTheMostVisitedChildIsCommitted
     EXPECT_EQ(sut.policy_choose(kFrontier, count, at), 10);
 }
 
-TEST_F(CommittingPolicyTest, ATieForMostVisitsGoesToTheFirstChild)
+TEST_F(CommittingPolicyTest, TheFinderIsAskedAboutTheFrontiersChoices)
 {
-    set_child_visits(20, 50, 50);
-    EXPECT_CALL(commit, commit(kFrontier, 10, 110, 50u));
-
-    EXPECT_EQ(sut.policy_choose(kFrontier, count, at), 10);
-}
-
-TEST_F(CommittingPolicyTest, TheLastChildCanBeCommitted)
-{
-    set_child_visits(1, 2, 3);
-    EXPECT_CALL(commit, commit(kFrontier, 20, 120, 3u));
+    EXPECT_CALL(find_commit_child, find(kFrontier, ::testing::Ref(count), ::testing::Ref(at)))
+        .WillOnce(Return(std::optional<int>(20)));
+    EXPECT_CALL(commit, commit(kFrontier, 20, 120, 20u));
 
     EXPECT_EQ(sut.policy_choose(kFrontier, count, at), 20);
 }
 
-TEST_F(CommittingPolicyTest, WithNoVisitedChildNothingIsCommitted)
+TEST_F(CommittingPolicyTest, BeforeTheConditionHoldsTheFinderIsNotAsked)
 {
-    set_child_visits(0, 0, 0);
+    ON_CALL(reach_condition, reached(_)).WillByDefault(Return(false));
+    EXPECT_CALL(find_commit_child, find(_, _, _)).Times(0);
+
+    sut.policy_choose(kFrontier, count, at);
+}
+
+TEST_F(CommittingPolicyTest, WhenTheFinderPicksNothingNothingIsCommitted)
+{
+    ON_CALL(find_commit_child, find(_, _, _)).WillByDefault(Return(std::nullopt));
     EXPECT_CALL(commit, commit(_, _, _, _)).Times(0);
 
     EXPECT_EQ(sut.policy_choose(kFrontier, count, at), 20);
