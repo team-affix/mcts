@@ -1,5 +1,5 @@
-// SP-UCT on the terminal-reward track game: the same game as
-// uct_terminal_reward_game, run through spuct_value_manifest, must also converge
+// Best-path memory on the terminal-reward track game: the same game as
+// uct_terminal_reward_game, run through best_path_value_manifest, must also converge
 // on the optimal score.
 //
 // Navigate the track; reward = track[last in-bounds position before OOB].
@@ -15,18 +15,18 @@
 #include <vector>
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
-#include "infrastructure/spuct_value_manifest.hpp"
+#include "infrastructure/best_path_value_manifest.hpp"
 #include "infrastructure/value_table.hpp"
 #include "infrastructure/visits_table.hpp"
 #include "optimal_scores.hpp"
 #include "walkers.hpp"
 
-class SpuctTerminalRewardGameTest : public ::testing::Test
+class BestPathTerminalRewardGameTest : public ::testing::Test
 {
 protected:
     using visits_t   = monte_carlo::visits_table<int, std::unordered_map>;
     using value_t    = monte_carlo::value_table<int, double, std::unordered_map>;
-    using manifest_t = monte_carlo::spuct_value_manifest<
+    using manifest_t = monte_carlo::best_path_value_manifest<
                           int, jump_t, double,
                           visits_t, visits_t, value_t, value_t,
                           position_walker,
@@ -98,52 +98,52 @@ protected:
     }
 };
 
-TEST_F(SpuctTerminalRewardGameTest, Seed40Track10Moves123)
+TEST_F(BestPathTerminalRewardGameTest, Seed40Track10Moves123)
 {
     verify_converges_to_optimal(40, 10, {1, 2, 3}, 10000);
 }
 
-TEST_F(SpuctTerminalRewardGameTest, Seed41Track10Moves123)
+TEST_F(BestPathTerminalRewardGameTest, Seed41Track10Moves123)
 {
     verify_converges_to_optimal(41, 10, {1, 2, 3}, 10000);
 }
 
-TEST_F(SpuctTerminalRewardGameTest, Seed42Track30Moves123)
+TEST_F(BestPathTerminalRewardGameTest, Seed42Track30Moves123)
 {
     verify_converges_to_optimal(42, 30, {1, 2, 3}, 200000);
 }
 
-TEST_F(SpuctTerminalRewardGameTest, Seed43Track30PrimeMoves)
+TEST_F(BestPathTerminalRewardGameTest, Seed43Track30PrimeMoves)
 {
     verify_converges_to_optimal(43, 30, {2, 3, 5, 7}, 200000);
 }
 
-TEST_F(SpuctTerminalRewardGameTest, Seed44Track10Moves25)
+TEST_F(BestPathTerminalRewardGameTest, Seed44Track10Moves25)
 {
     verify_converges_to_optimal(44, 10, {2, 5}, 10000);
 }
 
-TEST_F(SpuctTerminalRewardGameTest, Seed45Track10Moves1234)
+TEST_F(BestPathTerminalRewardGameTest, Seed45Track10Moves1234)
 {
     verify_converges_to_optimal(45, 10, {1, 2, 3, 4}, 10000);
 }
 
-TEST_F(SpuctTerminalRewardGameTest, Seed46Track15Moves123)
+TEST_F(BestPathTerminalRewardGameTest, Seed46Track15Moves123)
 {
     verify_converges_to_optimal(46, 15, {1, 2, 3}, 20000);
 }
 
-TEST_F(SpuctTerminalRewardGameTest, Seed47Track15Moves235)
+TEST_F(BestPathTerminalRewardGameTest, Seed47Track15Moves235)
 {
     verify_converges_to_optimal(47, 15, {2, 3, 5}, 20000);
 }
 
-TEST_F(SpuctTerminalRewardGameTest, Seed48Track10Moves15)
+TEST_F(BestPathTerminalRewardGameTest, Seed48Track10Moves15)
 {
     verify_converges_to_optimal(48, 10, {1, 5}, 10000);
 }
 
-TEST_F(SpuctTerminalRewardGameTest, Seed49Track20Moves123)
+TEST_F(BestPathTerminalRewardGameTest, Seed49Track20Moves123)
 {
     verify_converges_to_optimal(49, 20, {1, 2, 3}, 50000);
 }
