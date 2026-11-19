@@ -30,6 +30,7 @@
 #include "infrastructure/uniform_exploration_constant.hpp"
 #include "infrastructure/uniform_value_delta.hpp"
 #include "infrastructure/uniform_value_update.hpp"
+#include "infrastructure/value_bounds.hpp"
 #include "infrastructure/value_table.hpp"
 #include "infrastructure/visit_proportional_grant.hpp"
 #include "infrastructure/visits_table.hpp"

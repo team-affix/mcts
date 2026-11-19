@@ -7,6 +7,7 @@
 #include <vector>
 #include <gtest/gtest.h>
 #include "infrastructure/best_path_value_manifest.hpp"
+#include "infrastructure/value_bounds.hpp"
 #include "infrastructure/value_table.hpp"
 #include "infrastructure/visits_table.hpp"
 #include "walkers.hpp"
@@ -17,9 +18,10 @@ protected:
     using node_t     = std::vector<int>;
     using visits_t   = monte_carlo::visits_table<node_t, path_unordered_map>;
     using value_t    = monte_carlo::value_table<node_t, double, path_unordered_map>;
+    using bounds_t   = monte_carlo::value_bounds<double>;
     using manifest_t = monte_carlo::best_path_value_manifest<
                           node_t, jump_t, double,
-                          visits_t, visits_t, value_t, value_t,
+                          visits_t, visits_t, value_t, value_t, bounds_t, bounds_t,
                           path_walker,
                           std::vector<jump_t>, std::vector<jump_t>,
                           std::mt19937>;
@@ -28,9 +30,10 @@ protected:
 
     visits_t            visits;
     value_t             value;
+    bounds_t            bounds;
     std::mt19937        rng{7};
     std::vector<jump_t> jumps{1, 2};
-    manifest_t          m{visits, visits, value, value, rng, 1.0, node_t{0}};
+    manifest_t          m{visits, visits, value, value, bounds, bounds, rng, 1.0, node_t{0}};
 
     // Makes kDepth choices, then ends the episode with the given reward.
     // Returns the nodes the episode passed through below the root.
