@@ -1,9 +1,15 @@
 #ifndef MCTS_HPP
 #define MCTS_HPP
 
+#include "infrastructure/best_path_child_finder.hpp"
+#include "infrastructure/best_path_commit_value_manifest.hpp"
 #include "infrastructure/best_path_grafter.hpp"
+#include "infrastructure/best_path_recorder.hpp"
+#include "infrastructure/best_path_recording_terminator.hpp"
+#include "infrastructure/best_path_store.hpp"
 #include "infrastructure/best_path_terminator.hpp"
 #include "infrastructure/best_path_value_manifest.hpp"
+#include "infrastructure/choice_logger.hpp"
 #include "infrastructure/commit_value_manifest.hpp"
 #include "infrastructure/commitment_store.hpp"
 #include "infrastructure/committed_policy.hpp"
@@ -19,6 +25,7 @@
 #include "infrastructure/dbuct_value_stack_controller.hpp"
 #include "infrastructure/dbuct_visit_adder.hpp"
 #include "infrastructure/dbuct_visit_creditor.hpp"
+#include "infrastructure/episode_choice_log.hpp"
 #include "infrastructure/highest_mean_child_finder.hpp"
 #include "infrastructure/in_rollout_flag.hpp"
 #include "infrastructure/most_visited_child_finder.hpp"
